@@ -71,6 +71,9 @@ def _download_image(url: Optional[str]) -> Optional[bytes]:
     return response.content
 
 
+from concurrent.futures import ThreadPoolExecutor
+
+
 def fetch_play_store_metadata(play_url: str) -> Dict:
     """
     Fetch real Play Store metadata using google-play-scraper!
@@ -80,8 +83,8 @@ def fetch_play_store_metadata(play_url: str) -> Dict:
     # Fetch app info
     info = app(package_name)
     
-    # Fetch reviews (max 200)
-    review_list, _ = reviews(package_name, count=200, lang="en", country="us")
+    # Fetch reviews (50 is optimal for fast sentiment analysis)
+    review_list, _ = reviews(package_name, count=50, lang="en", country="us")
     
     # Normalize reviews to our expected format
     normalized_reviews: List[Dict] = []
@@ -97,12 +100,18 @@ def fetch_play_store_metadata(play_url: str) -> Dict:
     last_updated = _normalize_datetime(info.get("updated"))
     downloads = info.get("realInstalls") or info.get("minInstalls") or 0
     screenshots = info.get("screenshots", [])
-    icon_bytes = _download_image(info.get("icon"))
-    screenshot_bytes_list = [
-        image_bytes
-        for image_bytes in (_download_image(url) for url in screenshots[:5])
-        if image_bytes
-    ]
+    
+    # Download icon and screenshots concurrently in parallel threads
+    icon_bytes = None
+    screenshot_bytes_list: List[bytes] = []
+
+    urls_to_fetch = [info.get("icon")] + screenshots[:5]
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        results = list(executor.map(_download_image, urls_to_fetch))
+
+    if results:
+        icon_bytes = results[0]
+        screenshot_bytes_list = [img for img in results[1:] if img]
 
     return {
         "package_name": package_name,

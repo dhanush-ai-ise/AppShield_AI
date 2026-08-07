@@ -48,6 +48,20 @@ def get_best_model_name() -> Optional[str]:
     return None
 
 
+def warmup_best_model():
+    """
+    Pre-loads the best ML model and pre-initializes its SHAP explainer into memory.
+    Eliminates cold-start latency on the first scan request.
+    """
+    try:
+        best_name = get_best_model_name()
+        if best_name:
+            load_model(best_name)
+            get_shap_explainer(best_name)
+    except Exception:
+        pass
+
+
 def get_benchmark_results() -> Optional[dict]:
     path = MODEL_ROOT / "benchmark_results.json"
     if path.exists():

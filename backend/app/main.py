@@ -42,6 +42,12 @@ def on_startup():
         # Don't fail startup if Postgres isn't available
         pass
 
+    try:
+        from app.ml.model_registry import warmup_best_model
+        warmup_best_model()
+    except Exception:
+        pass
+
 
 @app.get("/api/health")
 def health():
