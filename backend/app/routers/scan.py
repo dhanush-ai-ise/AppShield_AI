@@ -223,7 +223,11 @@ def run_pipeline(collected: dict, model_name: Optional[str] = None) -> dict:
         "developer": collected.get("developer_info", {}).get("name"),
         "category": collected.get("category"),
         "downloads": collected.get("metadata", {}).get("installs"),
-        "rating": collected.get("metadata", {}).get("score"),
+        "rating": (
+            round(float(collected.get("metadata", {}).get("rating") or collected.get("metadata", {}).get("score")), 1)
+            if (collected.get("metadata", {}).get("rating") is not None or collected.get("metadata", {}).get("score") is not None)
+            else None
+        ),
         "app_icon": collected.get("app_icon"),
         "screenshots": collected.get("screenshots", []),
         "apk_sha256": collected.get("apk_sha256"),

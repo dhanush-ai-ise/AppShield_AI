@@ -101,6 +101,17 @@ def fetch_play_store_metadata(play_url: str) -> Dict:
     downloads = info.get("realInstalls") or info.get("minInstalls") or 0
     screenshots = info.get("screenshots", [])
     
+    # Format and round rating score cleanly to 1 decimal place
+    raw_score = info.get("score")
+    rating_val = None
+    if raw_score is not None:
+        try:
+            parsed_score = float(raw_score)
+            if parsed_score > 0:
+                rating_val = round(parsed_score, 1)
+        except (ValueError, TypeError):
+            pass
+
     # Download icon and screenshots concurrently in parallel threads
     icon_bytes = None
     screenshot_bytes_list: List[bytes] = []
@@ -121,7 +132,7 @@ def fetch_play_store_metadata(play_url: str) -> Dict:
             "id": info.get("developerId"),
             "email": info.get("developerEmail"),
             "website": info.get("developerWebsite"),
-            "average_rating": info.get("score"),
+            "average_rating": rating_val,
             "is_verified": bool(info.get("developerEmail") or info.get("developerWebsite")),
         },
         "permissions": info.get("permissions", []),
@@ -134,8 +145,8 @@ def fetch_play_store_metadata(play_url: str) -> Dict:
             "category": info.get("genre"),
             "downloads": downloads,
             "installs": info.get("installs"),
-            "rating": info.get("score"),
-            "score": info.get("score"),
+            "rating": rating_val,
+            "score": rating_val,
             "rating_count": info.get("ratings"),
             "ratings": info.get("ratings"),
             "released": info.get("released"),
