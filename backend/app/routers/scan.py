@@ -47,7 +47,7 @@ def _image_data_url(image_bytes: Optional[bytes]) -> Optional[str]:
 
 def parse_apk_with_androguard(apk_path: Path) -> Dict:
     """
-    Parse an APK file using Androguard and extract only necessary manifest data.
+    Parse an APK file using Androguard and extract manifest data & DEX API flags in milliseconds.
     """
     if not ANDROGUARD_AVAILABLE:
         raise HTTPException(status_code=500, detail="Androguard not available")
@@ -58,8 +58,6 @@ def parse_apk_with_androguard(apk_path: Path) -> Dict:
     }
     
     try:
-        # Skip full DEX analysis if possible by just parsing the APK
-        # First, try to get manifest-only data, and only do DEX analysis if needed
         a = APK(str(apk_path))
         
         # Check debuggable attribute safely from AndroidManifest
@@ -83,36 +81,36 @@ def parse_apk_with_androguard(apk_path: Path) -> Dict:
             "is_debuggable": is_debuggable,
             "uses_reflection": False,
             "permissions": a.get_permissions(),
+            "icon_bytes": None,
         }
         
-        # Now, do minimal DEX analysis only to check for suspicious API calls
+        # Fast DEX string-pool scan: inspect raw string IDs across all classes.dex
+        # Eliminates heavy decompilation & infinite deadlocks on packed MOD APKs
         try:
-            a_dex, d, dx = AnalyzeAPK(str(apk_path))
+            found_apis = set()
+            uses_reflection = False
             
-            # Extract only suspicious API calls to save time
-            api_calls: set = set()
-            found_suspicious = set()
-            for method in dx.get_methods():
-                try:
-                    method_name = method.name
-                    if not method_name:
-                        continue
-                    # Check for reflection
-                    if not manifest_data["uses_reflection"] and ("reflect" in method_name.lower() or "class.forname" in str(method.class_name).lower()):
-                        manifest_data["uses_reflection"] = True
-                    # Check for suspicious calls
-                    if method_name in SUSPICIOUS_API_CALLS:
-                        found_suspicious.add(method_name)
-                        api_calls.add(method_name)
-                        # If we found all suspicious ones, break early!
-                        if found_suspicious == SUSPICIOUS_API_CALLS:
-                            break
-                except Exception:
-                    pass
-            
-            manifest_data["api_calls"] = list(api_calls)
+            for dex_bytes in a.get_all_dex():
+                if not dex_bytes:
+                    continue
+                # Bytecode string pool matching
+                for call in SUSPICIOUS_API_CALLS:
+                    if call.encode("utf-8") in dex_bytes:
+                        found_apis.add(call)
+                if not uses_reflection and (b"reflect" in dex_bytes.lower() or b"class.forname" in dex_bytes.lower()):
+                    uses_reflection = True
+
+            manifest_data["api_calls"] = list(found_apis)
+            manifest_data["uses_reflection"] = uses_reflection
+        except Exception as dex_err:
+            logger.warning(f"Fast DEX string scan warning: {dex_err}")
+
+        # Extract icon directly in the same pass
+        try:
+            icon_path = a.get_app_icon()
+            if icon_path:
+                manifest_data["icon_bytes"] = a.get_file(icon_path)
         except Exception:
-            # If full DEX analysis fails, just skip API calls
             pass
 
         return manifest_data
@@ -283,16 +281,7 @@ async def scan_apk_upload(
         
         # Parse APK with Androguard
         manifest_data = parse_apk_with_androguard(apk_path)
-        
-        # Extract icon if available
-        icon_bytes = None
-        try:
-            a = APK(str(apk_path))
-            icon_path = a.get_app_icon()
-            if icon_path:
-                icon_bytes = a.get_file(icon_path)
-        except Exception:
-            pass
+        icon_bytes = manifest_data.get("icon_bytes")
         
         collected = {
             "input_type": "apk_upload",
@@ -333,16 +322,7 @@ async def scan_apk_url(
         apk_sha256 = sha256_of_file(apk_path)
         # Parse APK with Androguard
         manifest_data = parse_apk_with_androguard(apk_path)
-        
-        # Extract icon if available
-        icon_bytes = None
-        try:
-            a = APK(str(apk_path))
-            icon_path = a.get_app_icon()
-            if icon_path:
-                icon_bytes = a.get_file(icon_path)
-        except Exception:
-            pass
+        icon_bytes = manifest_data.get("icon_bytes")
         
         collected = {
             "input_type": "apk_url",

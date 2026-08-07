@@ -61,11 +61,23 @@ async function handle(res: Response) {
   return res.json();
 }
 
-function request(path: string, init: RequestInit = {}) {
+function request(path: string, init: RequestInit = {}, timeoutMs = 60000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   return fetch(`${API_BASE}${path}`, {
     ...init,
+    signal: init.signal || controller.signal,
     headers: withAuth(init.headers),
-  }).then(handle);
+  })
+    .then(handle)
+    .catch((err) => {
+      if (err.name === "AbortError") {
+        throw new Error("Request timed out. The server took too long to respond.");
+      }
+      throw err;
+    })
+    .finally(() => clearTimeout(timer));
 }
 
 export const api = {
