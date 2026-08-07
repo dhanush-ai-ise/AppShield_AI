@@ -1,0 +1,46 @@
+export type Prediction = "Safe" | "Suspicious" | "Fraudulent";
+
+export interface ModuleScore {
+  module: string;
+  score: number; // 0-1
+  reasons: string[];
+}
+
+export interface ScanResult {
+  scan_id: string;
+  app_name: string;
+  package_name: string;
+  version?: string;
+  developer?: string;
+  category?: string;
+  downloads?: string;
+  rating?: number;
+  app_icon?: string;
+  size_mb?: number;
+  scanned_at?: string;
+  overall_risk_score: number; // 0-100
+  trust_score: number;
+  prediction: Prediction;
+  confidence: number;
+  model_used: string;
+  module_scores: Record<string, ModuleScore>;
+  top_contributors: { feature: string; label: string; impact_percent: number }[];
+  flag_reasons: { module: string; reason: string; level: string; score: number }[];
+  screenshots?: string[];
+}
+
+export interface ModelBenchmarkEntry {
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1_score: number;
+  roc_auc: number;
+  training_time_s: number | null;
+  inference_time_s: number | null;
+  confusion_matrix?: number[][];
+}
+
+export interface BenchmarkResponse {
+  results: Record<string, ModelBenchmarkEntry>;
+  best_model: string;
+}

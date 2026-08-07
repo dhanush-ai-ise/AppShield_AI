@@ -1,0 +1,9 @@
+{
+  "name": "appshield-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": ".\\start-dev.cmd",
+    "start": ".\\start-dev.cmd"
+  }
+}
