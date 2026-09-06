@@ -4,7 +4,8 @@ import { useSearchParams } from "next/navigation";
 import {
   Download, Share2, Info, ChevronRight, ChevronLeft, AlertTriangle,
   CheckCircle2, ShieldAlert, KeyRound, MessageSquareWarning, ImageIcon,
-  FileBadge2, Search, ShieldCheck, Lock, Sparkles, ZoomIn, X
+  FileBadge2, Search, ShieldCheck, Lock, Sparkles, ZoomIn, X,
+  Smartphone, Layers, Maximize2
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
@@ -225,6 +226,9 @@ export default function DashboardPage() {
   const [scan, setScan] = useState<ScanResult>(DEMO_FALLBACK);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number>(0);
+  const [activeShotIndex, setActiveShotIndex] = useState<number>(0);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [screenshotViewMode, setScreenshotViewMode] = useState<"phone" | "grid">("phone");
 
   useEffect(() => {
     let isMounted = true;
@@ -440,21 +444,75 @@ export default function DashboardPage() {
     ];
   }, [scan.flag_reasons]);
 
-  const screenshots = useMemo(() => {
+  const rawScreenshots = useMemo(() => {
     if (!scan.screenshots || scan.screenshots.length === 0) return [];
     const seen = new Set<string>();
     const result: string[] = [];
     for (const url of scan.screenshots) {
-      if (!url) continue;
+      if (!url || typeof url !== "string") continue;
       // Deduplicate Play Store images using base ID before resize/query params
       const baseId = url.split("=")[0];
       if (!seen.has(baseId)) {
         seen.add(baseId);
-        result.push(url);
+        // Optimize Google Play CDN URLs for lightweight, high-res webp
+        let optimized = url;
+        if (url.includes("googleusercontent.com")) {
+          optimized = `${baseId}=w480-h960-rw`;
+        }
+        result.push(optimized);
       }
     }
     return result;
   }, [scan.screenshots]);
+
+  const screenshots = useMemo(() => {
+    return rawScreenshots.filter((url) => !failedImages[url]);
+  }, [rawScreenshots, failedImages]);
+
+  const safeActiveIndex = useMemo(() => {
+    if (screenshots.length === 0) return 0;
+    return Math.min(Math.max(0, activeShotIndex), screenshots.length - 1);
+  }, [screenshots.length, activeShotIndex]);
+
+  const miniFilmstrip = useMemo(() => {
+    if (screenshots.length <= 5) return screenshots;
+    const start = Math.max(0, Math.min(safeActiveIndex - 2, screenshots.length - 5));
+    return screenshots.slice(start, start + 5);
+  }, [screenshots, safeActiveIndex]);
+
+  const markImageFailed = (url: string) => {
+    setFailedImages((prev) => {
+      if (prev[url]) return prev;
+      return { ...prev, [url]: true };
+    });
+    if (previewImage === url) {
+      setPreviewImage(null);
+    }
+  };
+
+  useEffect(() => {
+    setActiveShotIndex(0);
+    setFailedImages({});
+  }, [scan.scan_id]);
+
+  useEffect(() => {
+    if (!previewImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPreviewImage(null);
+      } else if (e.key === "ArrowLeft" && previewIndex > 0) {
+        const newIdx = previewIndex - 1;
+        setPreviewIndex(newIdx);
+        setPreviewImage(screenshots[newIdx]);
+      } else if (e.key === "ArrowRight" && previewIndex < screenshots.length - 1) {
+        const newIdx = previewIndex + 1;
+        setPreviewIndex(newIdx);
+        setPreviewImage(screenshots[newIdx]);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewImage, previewIndex, screenshots]);
 
   return (
     <div className="flex bg-[#f0f3f9] min-h-screen text-slate-800 font-sans">
@@ -602,49 +660,208 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* 3. App Screenshots Dynamic Grid Card */}
-            <div className="col-span-12 md:col-span-6 lg:col-span-3 panel p-6 flex flex-col justify-between h-[380px]">
+            {/* 3. App Screenshots Dynamic Showcase Card */}
+            <div className="col-span-12 md:col-span-6 lg:col-span-3 panel p-5 flex flex-col justify-between h-[380px] relative">
               <div>
-                <div className="flex items-center justify-between mb-3">
+                {/* Header with Title, Mode Toggle, and Count Badge */}
+                <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-extrabold text-slate-900">
                     App Screenshots
                   </h3>
-                  <span className="clay-badge-purple text-[10px] font-extrabold px-2.5 py-0.5">
-                    {screenshots.length} {screenshots.length === 1 ? "Pic" : "Pics"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {screenshots.length > 1 && (
+                      <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                        <button
+                          type="button"
+                          title="Phone Carousel View"
+                          onClick={() => setScreenshotViewMode("phone")}
+                          className={`p-1 rounded-md transition-all ${
+                            screenshotViewMode === "phone"
+                              ? "bg-white text-violet-700 shadow-sm font-bold"
+                              : "text-slate-400 hover:text-slate-700"
+                          }`}
+                        >
+                          <Smartphone size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          title="Grid Gallery View"
+                          onClick={() => setScreenshotViewMode("grid")}
+                          className={`p-1 rounded-md transition-all ${
+                            screenshotViewMode === "grid"
+                              ? "bg-white text-violet-700 shadow-sm font-bold"
+                              : "text-slate-400 hover:text-slate-700"
+                          }`}
+                        >
+                          <Layers size={13} />
+                        </button>
+                      </div>
+                    )}
+                    <span className="clay-badge-purple text-[10px] font-extrabold px-2.5 py-0.5">
+                      {screenshots.length} {screenshots.length === 1 ? "Pic" : "Pics"}
+                    </span>
+                  </div>
                 </div>
-                
-                {/* Dynamic Multi-Row Grid: 4 per row, 2 rows (8 pics) visible simultaneously in viewport */}
-                <div className="grid grid-cols-4 gap-2 my-2 h-[220px] max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
-                  {screenshots.length > 0 ? (
-                    screenshots.map((url, idx) => (
-                      <div 
-                        key={idx} 
-                        className="aspect-[9/15] rounded-xl overflow-hidden border-2 border-slate-200/90 hover:border-violet-600 hover:shadow-lg transition-all cursor-pointer group relative"
-                        onClick={() => {
-                          setPreviewIndex(idx);
-                          setPreviewImage(url);
-                        }}
-                      >
-                        <img src={url} alt={`Screenshot ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                        <div className="absolute inset-0 bg-violet-900/0 group-hover:bg-violet-900/25 transition-colors flex items-center justify-center">
-                          <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+
+                {screenshots.length > 0 ? (
+                  screenshotViewMode === "phone" ? (
+                    /* PHONE SHOWCASE VIEW */
+                    <div className="relative flex flex-col items-center my-1">
+                      {/* Realistic Smartphone Mockup */}
+                      <div className="relative w-[124px] h-[216px] bg-slate-950 rounded-[20px] p-[5px] shadow-[0_10px_25px_rgba(15,23,42,0.22)] border border-slate-700/70 group">
+                        {/* Dynamic Island / Speaker */}
+                        <div className="absolute top-[6px] left-1/2 -translate-x-1/2 w-7 h-1.5 bg-slate-950 rounded-full z-20" />
+
+                        {/* Screen Image Container */}
+                        <div
+                          className="relative w-full h-full rounded-[16px] overflow-hidden bg-slate-900 flex items-center justify-center cursor-pointer"
+                          onClick={() => {
+                            setPreviewIndex(safeActiveIndex);
+                            setPreviewImage(screenshots[safeActiveIndex]);
+                          }}
+                        >
+                          <img
+                            src={screenshots[safeActiveIndex]}
+                            alt={`App Screenshot ${safeActiveIndex + 1}`}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={() => markImageFailed(screenshots[safeActiveIndex])}
+                          />
+                          <div className="absolute inset-0 bg-violet-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white">
+                            <ZoomIn size={18} className="drop-shadow-md" />
+                            <span className="text-[9px] font-bold drop-shadow">Expand</span>
+                          </div>
                         </div>
+
+                        {/* Floating Prev Button */}
+                        {safeActiveIndex > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveShotIndex((prev) => Math.max(0, prev - 1));
+                            }}
+                            className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/95 shadow-md border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-violet-600 hover:text-white transition-all z-20"
+                            title="Previous Screenshot"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                        )}
+
+                        {/* Floating Next Button */}
+                        {safeActiveIndex < screenshots.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveShotIndex((prev) => Math.min(screenshots.length - 1, prev + 1));
+                            }}
+                            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/95 shadow-md border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-violet-600 hover:text-white transition-all z-20"
+                            title="Next Screenshot"
+                          >
+                            <ChevronRight size={14} />
+                          </button>
+                        )}
                       </div>
-                    ))
+
+                      {/* Mini Thumbnail Filmstrip */}
+                      {screenshots.length > 1 && (
+                        <div className="flex items-center justify-center gap-1.5 mt-2.5 max-w-full overflow-hidden px-1">
+                          {miniFilmstrip.map((thumbUrl) => {
+                            const actualIdx = screenshots.indexOf(thumbUrl);
+                            const isActive = actualIdx === safeActiveIndex;
+                            return (
+                              <button
+                                key={actualIdx}
+                                type="button"
+                                onClick={() => setActiveShotIndex(actualIdx)}
+                                className={`w-6 h-10 rounded-md overflow-hidden transition-all shrink-0 border ${
+                                  isActive
+                                    ? "border-violet-600 ring-2 ring-violet-500/40 scale-110 shadow-sm"
+                                    : "border-slate-200 opacity-60 hover:opacity-100"
+                                }`}
+                              >
+                                <img
+                                  src={thumbUrl}
+                                  alt={`Thumb ${actualIdx + 1}`}
+                                  referrerPolicy="no-referrer"
+                                  loading="lazy"
+                                  className="w-full h-full object-cover"
+                                  onError={() => markImageFailed(thumbUrl)}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   ) : (
-                    [0, 1, 2, 3, 4, 5, 6, 7].map((idx) => (
-                      <div key={idx} className="aspect-[9/15] rounded-xl bg-slate-200/60 border border-slate-300/80 flex flex-col items-center justify-center p-1 text-[9px] text-slate-400 text-center font-medium">
-                        <ImageIcon size={14} className="mb-1 text-slate-400" />
-                        N/A
-                      </div>
-                    ))
-                  )}
-                </div>
+                    /* GRID GALLERY VIEW (Clean 3-column proportional grid) */
+                    <div className="grid grid-cols-3 gap-2 my-2 h-[225px] max-h-[225px] overflow-y-auto pr-1 scrollbar-thin">
+                      {screenshots.map((url, idx) => (
+                        <div
+                          key={idx}
+                          className="aspect-[9/16] rounded-xl overflow-hidden border border-slate-200 hover:border-violet-600 hover:shadow-md transition-all cursor-pointer group relative bg-slate-100"
+                          onClick={() => {
+                            setPreviewIndex(idx);
+                            setPreviewImage(url);
+                          }}
+                        >
+                          <img
+                            src={url}
+                            alt={`Screenshot ${idx + 1}`}
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={() => markImageFailed(url)}
+                          />
+                          <div className="absolute inset-0 bg-violet-900/0 group-hover:bg-violet-900/25 transition-colors flex items-center justify-center">
+                            <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
+                          </div>
+                          <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[8px] font-bold px-1 rounded backdrop-blur-xs">
+                            {idx + 1}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  /* EMPTY STATE */
+                  <div className="h-[230px] rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200/80 flex flex-col items-center justify-center p-4 text-center my-1">
+                    <div className="w-10 h-10 rounded-full bg-slate-200/70 flex items-center justify-center mb-2 text-slate-400">
+                      <ImageIcon size={20} />
+                    </div>
+                    <div className="text-xs font-bold text-slate-700">No Screenshots</div>
+                    <div className="text-[10px] text-slate-400 mt-1 max-w-[170px]">
+                      This package was analyzed without Google Play Store screenshots.
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="text-[11px] font-semibold text-slate-400 text-center pt-2 border-t border-slate-100/80">
-                Click any screenshot to view full screen
+              {/* Card Footer with Quick Action */}
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 pt-2 border-t border-slate-100/80">
+                {screenshots.length > 0 ? (
+                  <>
+                    <span>
+                      {screenshotViewMode === "phone"
+                        ? `Shot ${safeActiveIndex + 1} of ${screenshots.length}`
+                        : "Grid Gallery"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewIndex(safeActiveIndex);
+                        setPreviewImage(screenshots[safeActiveIndex]);
+                      }}
+                      className="text-violet-600 hover:text-violet-800 font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <Maximize2 size={11} /> Full Screen
+                    </button>
+                  </>
+                ) : (
+                  <span className="w-full text-center text-slate-400">Direct Binary Analysis</span>
+                )}
               </div>
             </div>
 
@@ -839,60 +1056,101 @@ export default function DashboardPage() {
 
         </div>
 
-        {/* Fullscreen Lightbox Modal */}
+        {/* Lightbox Modal with Full-Resolution Gallery Filmstrip */}
         {previewImage && (
           <div
-            className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4"
             onClick={() => setPreviewImage(null)}
           >
             <div
-              className="relative max-w-xl w-full bg-slate-900 p-4 rounded-3xl border border-slate-700 shadow-2xl flex flex-col items-center animate-in fade-in zoom-in duration-200"
+              className="relative max-w-2xl w-full bg-slate-900 p-5 rounded-3xl border border-slate-700 shadow-2xl flex flex-col items-center animate-in fade-in zoom-in duration-200"
               onClick={(e) => e.stopPropagation()}
             >
               <button
                 type="button"
                 onClick={() => setPreviewImage(null)}
                 className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors z-10"
+                title="Close"
               >
                 <X size={18} />
               </button>
 
-              <div className="w-full flex items-center justify-center max-h-[75vh] overflow-hidden my-2">
+              {/* Main Image Display */}
+              <div className="w-full flex items-center justify-center max-h-[68vh] overflow-hidden my-1">
                 <img
                   src={previewImage}
-                  alt="Full screenshot"
-                  className="max-h-[75vh] w-auto rounded-2xl object-contain shadow-2xl"
+                  alt={`Screenshot ${previewIndex + 1}`}
+                  referrerPolicy="no-referrer"
+                  className="max-h-[68vh] w-auto rounded-2xl object-contain shadow-2xl border border-slate-800"
+                  onError={() => markImageFailed(previewImage)}
                 />
               </div>
 
-              <div className="flex items-center justify-between w-full px-4 pt-3 border-t border-slate-800 text-white text-xs font-bold">
-                <button
-                  type="button"
-                  disabled={previewIndex === 0}
-                  onClick={() => {
-                    const newIdx = previewIndex - 1;
-                    setPreviewIndex(newIdx);
-                    setPreviewImage(screenshots[newIdx]);
-                  }}
-                  className="clay-btn-soft px-4 py-2 text-white disabled:opacity-30 flex items-center gap-1"
-                >
-                  <ChevronLeft size={16} /> Prev
-                </button>
-                <span className="text-slate-300 font-extrabold">
-                  {previewIndex + 1} of {screenshots.length}
-                </span>
-                <button
-                  type="button"
-                  disabled={previewIndex === screenshots.length - 1}
-                  onClick={() => {
-                    const newIdx = previewIndex + 1;
-                    setPreviewIndex(newIdx);
-                    setPreviewImage(screenshots[newIdx]);
-                  }}
-                  className="clay-btn-purple px-4 py-2 text-white disabled:opacity-30 flex items-center gap-1"
-                >
-                  Next <ChevronRight size={16} />
-                </button>
+              {/* Bottom Navigation and Filmstrip */}
+              <div className="w-full pt-3 border-t border-slate-800 flex flex-col gap-2.5">
+                {/* Controls */}
+                <div className="flex items-center justify-between px-2 text-white text-xs font-bold">
+                  <button
+                    type="button"
+                    disabled={previewIndex === 0}
+                    onClick={() => {
+                      const newIdx = previewIndex - 1;
+                      setPreviewIndex(newIdx);
+                      setPreviewImage(screenshots[newIdx]);
+                      setActiveShotIndex(newIdx);
+                    }}
+                    className="clay-btn-soft px-3.5 py-1.5 text-white disabled:opacity-30 flex items-center gap-1 text-xs"
+                  >
+                    <ChevronLeft size={14} /> Previous
+                  </button>
+                  <span className="text-slate-300 font-extrabold text-xs">
+                    {previewIndex + 1} of {screenshots.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={previewIndex === screenshots.length - 1}
+                    onClick={() => {
+                      const newIdx = previewIndex + 1;
+                      setPreviewIndex(newIdx);
+                      setPreviewImage(screenshots[newIdx]);
+                      setActiveShotIndex(newIdx);
+                    }}
+                    className="clay-btn-purple px-3.5 py-1.5 text-white disabled:opacity-30 flex items-center gap-1 text-xs"
+                  >
+                    Next <ChevronRight size={14} />
+                  </button>
+                </div>
+
+                {/* Filmstrip of all screenshots */}
+                {screenshots.length > 1 && (
+                  <div className="flex gap-2 max-w-full overflow-x-auto py-1 px-1 scrollbar-thin">
+                    {screenshots.map((url, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setPreviewIndex(idx);
+                          setPreviewImage(url);
+                          setActiveShotIndex(idx);
+                        }}
+                        className={`h-12 w-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
+                          idx === previewIndex
+                            ? "border-violet-500 ring-2 ring-violet-500/50 scale-105"
+                            : "border-slate-700 opacity-60 hover:opacity-100"
+                        }`}
+                      >
+                        <img
+                          src={url}
+                          alt={`Thumb ${idx + 1}`}
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                          onError={() => markImageFailed(url)}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

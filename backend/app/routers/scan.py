@@ -245,9 +245,12 @@ def _save_scan_to_cache(scan_id: str, report: dict):
 
 
 def get_scan_by_id(scan_id: str) -> Optional[dict]:
-    """Retrieve scan from cache or MongoDB."""
+    """Retrieve scan from cache, baseline scans, or MongoDB."""
     if scan_id in _RECENT_SCANS:
         return _RECENT_SCANS[scan_id]
+    for sc in DEFAULT_BASELINE_SCANS:
+        if sc.get("scan_id") == scan_id:
+            return sc
     try:
         doc = scans_collection.find_one({"scan_id": scan_id}, {"_id": 0})
         if doc:
