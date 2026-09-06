@@ -11,7 +11,7 @@ risk output.
 | --- | --- |
 | Frontend | Built with Next.js, TypeScript, Tailwind, Recharts, and lucide-react. |
 | Backend API | Built with FastAPI routers for scans, models, datasets, reports, and auth. |
-| ML pipeline | Trains and serves Random Forest, XGBoost, LightGBM, CatBoost, Voting, Stacking, and Extra Trees models. |
+| ML pipeline | Trains and serves Random Forest, XGBoost, LightGBM, and CatBoost models. |
 | Saved models | Included under `backend/app/ml/trained_models` in this workspace. |
 | Play Store input | Uses `google-play-scraper` for metadata/reviews and downloads icon/screenshot bytes when available. |
 | APK upload / APK URL input | Uses Androguard to parse APK package, manifest, permissions, API calls, SDK values, and icon bytes. |

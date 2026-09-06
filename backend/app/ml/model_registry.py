@@ -41,23 +41,21 @@ def get_shap_explainer(name: str):
     return _SHAP_EXPLAINER_CACHE[name]
 
 
-def get_best_model_name() -> Optional[str]:
-    best_path = MODEL_ROOT / "best_model.txt"
-    if best_path.exists():
-        return best_path.read_text().strip()
-    return None
+def get_best_model_name() -> str:
+    """
+    Production Mode default model. Always sticks to random_forest.
+    """
+    return "random_forest"
 
 
 def warmup_best_model():
     """
-    Pre-loads the best ML model and pre-initializes its SHAP explainer into memory.
+    Pre-loads the default Random Forest ML model and pre-initializes its SHAP explainer into memory.
     Eliminates cold-start latency on the first scan request.
     """
     try:
-        best_name = get_best_model_name()
-        if best_name:
-            load_model(best_name)
-            get_shap_explainer(best_name)
+        load_model("random_forest")
+        get_shap_explainer("random_forest")
     except Exception:
         pass
 
@@ -71,12 +69,11 @@ def get_benchmark_results() -> Optional[dict]:
 
 def predict(feature_dict: Dict[str, float], model_name: Optional[str] = None) -> Dict:
     """
-    model_name=None -> Production Mode: auto-load best benchmarked model.
+    model_name=None -> Production Mode: always sticks to random_forest.
+    model_name=str  -> Research Mode: test any selected model (e.g. random_forest, xgboost, lightgbm, catboost).
     """
     if model_name is None:
-        model_name = get_best_model_name()
-        if model_name is None:
-            raise RuntimeError("No trained models available. Run training first.")
+        model_name = "random_forest"
 
     model = load_model(model_name)
     vector = np.array([[feature_dict[k] for k in FEATURE_ORDER]])

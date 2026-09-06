@@ -5,7 +5,7 @@ grows with new modules without migrations).
 from pymongo import MongoClient
 from app.config import settings
 
-_client = MongoClient(settings.MONGO_URL)
+_client = MongoClient(settings.MONGO_URL, serverSelectionTimeoutMS=2000)
 mongo_db = _client[settings.MONGO_DB]
 
 scans_collection = mongo_db["scans"]

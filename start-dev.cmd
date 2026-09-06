@@ -8,22 +8,15 @@ set "FRONTEND=%ROOT%frontend"
 echo Starting AppShield AI development services...
 echo.
 
-where docker >nul 2>nul
+docker info >nul 2>nul
 if %errorlevel% equ 0 (
-  echo Starting Docker services: Postgres, MongoDB, Redis...
+  echo Docker daemon is running. Starting database services: Postgres, MongoDB, Redis...
   pushd "%ROOT%" >nul
   docker compose up -d
-  if errorlevel 1 (
-    echo.
-    echo Docker services failed to start. Open Docker Desktop, wait until it is running, then run this file again.
-    popd >nul
-    pause
-    exit /b 1
-  )
   popd >nul
 ) else (
-  echo Docker was not found in PATH. Skipping Docker Compose startup.
-  echo Start Docker Desktop or run docker compose up -d manually if database features are needed.
+  echo Docker daemon is not active. Proceeding in standalone mode.
+  echo (Scans and ML models work directly; start Docker Desktop if history persistence is needed.)
 )
 
 if not exist "%BACKEND%\venv\Scripts\python.exe" (

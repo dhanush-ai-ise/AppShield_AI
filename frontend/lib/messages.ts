@@ -182,7 +182,7 @@ export const RESEARCH = {
       randomForest: "Random Forest: fastest training speed, ideal for prototyping",
       xgboost: "XGBoost: great balance between speed and accuracy",
       catboost: "CatBoost: handles categorical features extremely well",
-      stackingEnsemble: "Use Stacking Ensemble for maximum accuracy in production. Use LightGBM for faster real-time scanning.",
+      stackingEnsemble: "Use LightGBM for high accuracy and fast real-time scanning. Use Random Forest for robust, explainable baseline detection.",
     },
   },
 };

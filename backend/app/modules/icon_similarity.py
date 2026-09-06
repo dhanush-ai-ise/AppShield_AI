@@ -1,11 +1,7 @@
 """
 Module 6: Icon Similarity (counterfeit / clone detection).
-
-Primary path:
-- MobileNetV2 embeddings via Hugging Face transformers/torch when available.
-
-Fallback path:
-- Real visual descriptors (color histograms + edge features) built with OpenCV.
+Uses fast, robust visual descriptors (HSV color histograms + Canny edge features)
+built with OpenCV, matching the pre-computed icon embeddings database.
 """
 from functools import lru_cache
 import io
@@ -29,60 +25,28 @@ def _normalize_vector(vec: np.ndarray) -> np.ndarray:
     return vec / (np.linalg.norm(vec) + 1e-8)
 
 
-@lru_cache(maxsize=1)
-def _load_mobilenet():
+def extract_icon_embedding(image_bytes: bytes) -> np.ndarray:
     try:
-        from transformers import AutoImageProcessor, AutoModel
-        import torch
+        image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if image is None:
+            return np.zeros(544, dtype=np.float32)
 
-        processor = AutoImageProcessor.from_pretrained("google/mobilenet_v2_1.0_224")
-        model = AutoModel.from_pretrained("google/mobilenet_v2_1.0_224")
-        model.eval()
-        return processor, model, torch
+        image = cv2.resize(image, (224, 224))
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+        color_hist = cv2.calcHist([hsv], [0, 1, 2], None, [8, 8, 8], [0, 180, 0, 256, 0, 256]).flatten()
+        edge_hist = cv2.calcHist([cv2.Canny(gray, 100, 200)], [0], None, [32], [0, 256]).flatten()
+
+        vector = np.concatenate([color_hist, edge_hist])
+        return _normalize_vector(vector)
     except Exception:
-        return None
-
-
-def _extract_mobilenet_embedding(image_bytes: bytes) -> Optional[np.ndarray]:
-    backend = _load_mobilenet()
-    if backend is None:
-        return None
-
-    processor, model, torch = backend
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    inputs = processor(images=image, return_tensors="pt")
-    with torch.no_grad():
-        outputs = model(**inputs)
-
-    if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
-        vector = outputs.pooler_output[0].cpu().numpy()
-    else:
-        vector = outputs.last_hidden_state.mean(dim=1)[0].cpu().numpy()
-    return _normalize_vector(vector)
-
-
-def _extract_visual_fallback_embedding(image_bytes: bytes) -> np.ndarray:
-    image_array = np.frombuffer(image_bytes, dtype=np.uint8)
-    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError("Invalid icon image bytes.")
-
-    image = cv2.resize(image, (224, 224))
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    color_hist = cv2.calcHist([hsv], [0, 1, 2], None, [8, 8, 8], [0, 180, 0, 256, 0, 256]).flatten()
-    edge_hist = cv2.calcHist([cv2.Canny(gray, 100, 200)], [0], None, [32], [0, 256]).flatten()
-
-    vector = np.concatenate([color_hist, edge_hist])
-    return _normalize_vector(vector)
+        return np.zeros(544, dtype=np.float32)
 
 
 def get_embedding(image_bytes: bytes) -> np.ndarray:
-    mobilenet_vector = _extract_mobilenet_embedding(image_bytes)
-    if mobilenet_vector is not None:
-        return mobilenet_vector
-    return _extract_visual_fallback_embedding(image_bytes)
+    return extract_icon_embedding(image_bytes)
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:

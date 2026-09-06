@@ -60,7 +60,7 @@ def _download_image(url: Optional[str]) -> Optional[bytes]:
     if not url:
         return None
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=4)
         response.raise_for_status()
     except requests.RequestException:
         return None

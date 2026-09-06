@@ -18,6 +18,8 @@ export interface ScanResult {
   app_icon?: string;
   size_mb?: number;
   scanned_at?: string;
+  input_type?: string;
+  status?: string;
   overall_risk_score: number; // 0-100
   trust_score: number;
   prediction: Prediction;
@@ -26,6 +28,7 @@ export interface ScanResult {
   module_scores: Record<string, ModuleScore>;
   top_contributors: { feature: string; label: string; impact_percent: number }[];
   flag_reasons: { module: string; reason: string; level: string; score: number }[];
+  class_probabilities?: { Safe?: number; Suspicious?: number; Fraudulent?: number } & Record<string, number>;
   screenshots?: string[];
 }
 
@@ -43,4 +46,5 @@ export interface ModelBenchmarkEntry {
 export interface BenchmarkResponse {
   results: Record<string, ModelBenchmarkEntry>;
   best_model: string;
+  last_trained_at?: string;
 }

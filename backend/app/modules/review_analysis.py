@@ -14,12 +14,24 @@ from pathlib import Path
 import re
 from typing import Dict, List, Optional, Tuple
 
+import joblib
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from app.config import settings
+
+FAKE_REVIEW_MODEL_PATH = settings.DATASET_ROOT / "reviews" / "processed" / "fake_review_model.joblib"
+POSITIVE_WORDS = {
+    "great", "good", "love", "excellent", "awesome", "best", "amazing", "fast",
+    "clean", "useful", "helpful", "superb", "fantastic", "perfect", "smooth", "nice"
+}
+NEGATIVE_WORDS = {
+    "fake", "scam", "fraud", "virus", "malware", "terrible", "worst", "slow",
+    "crash", "crashes", "crashing", "bug", "broken", "horrible", "hate", "stole",
+    "steals", "thief", "useless", "garbage", "ad", "ads", "popup", "popups", "drain"
+}
 
 GENERIC_SPAM_PHRASES = [
     "best app ever",
@@ -52,21 +64,16 @@ def _is_fake_label(value) -> bool:
     return normalized in {"cg", "fake", "deceptive", "spam", "1", "fraudulent"}
 
 
-@lru_cache(maxsize=1)
-def _load_distilbert_sentiment():
-    try:
-        from transformers import pipeline
-
-        return pipeline(
-            "sentiment-analysis",
-            model="distilbert-base-uncased-finetuned-sst-2-english",
-        )
-    except Exception:
-        return None
 
 
 @lru_cache(maxsize=1)
 def _load_fake_review_model() -> Optional[Pipeline]:
+    if FAKE_REVIEW_MODEL_PATH.exists():
+        try:
+            return joblib.load(FAKE_REVIEW_MODEL_PATH)
+        except Exception:
+            pass
+
     review_dir = settings.DATASET_ROOT / "reviews" / "raw"
     csv_paths = [path for path in review_dir.glob("*.csv") if path.is_file()]
     training_texts: List[str] = []
@@ -101,6 +108,11 @@ def _load_fake_review_model() -> Optional[Pipeline]:
         ]
     )
     model.fit(training_texts, training_labels)
+    try:
+        FAKE_REVIEW_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(model, FAKE_REVIEW_MODEL_PATH)
+    except Exception:
+        pass
     return model
 
 
@@ -126,19 +138,28 @@ def _heuristic_fake_scores(texts: List[str]) -> List[float]:
     return scores
 
 
-def _sentiment_summary(texts: List[str]) -> Tuple[Optional[float], Optional[str]]:
-    sentiment_pipeline = _load_distilbert_sentiment()
-    if sentiment_pipeline is None or not texts:
+def _sentiment_summary(reviews: List[Dict]) -> Tuple[Optional[float], Optional[str]]:
+    if not reviews:
         return None, None
 
-    try:
-        sample = [text[:512] for text in texts[:32]]
-        results = sentiment_pipeline(sample)
-        positive_ratio = sum(1 for item in results if item["label"].upper() == "POSITIVE") / len(results)
-        label = "positive" if positive_ratio >= 0.5 else "negative"
-        return round(float(positive_ratio), 4), label
-    except Exception:
-        return None, None
+    positive_count = 0
+    total = len(reviews)
+    for r in reviews:
+        rating = r.get("rating", 3)
+        text = _normalize(r.get("text", ""))
+        pos_hits = sum(1 for w in POSITIVE_WORDS if w in text)
+        neg_hits = sum(1 for w in NEGATIVE_WORDS if w in text)
+        if rating >= 4:
+            positive_count += 1
+        elif rating <= 2:
+            pass
+        else:
+            if pos_hits >= neg_hits:
+                positive_count += 1
+
+    positive_ratio = round(positive_count / max(total, 1), 4)
+    label = "positive" if positive_ratio >= 0.5 else "negative"
+    return positive_ratio, label
 
 
 def analyze_reviews(reviews: List[Dict]) -> Dict:
@@ -172,7 +193,7 @@ def analyze_reviews(reviews: List[Dict]) -> Dict:
 
     fake_ratio = sum(1 for score in fake_scores if score >= 0.6) / len(fake_scores)
     average_fake_score = sum(fake_scores) / len(fake_scores)
-    sentiment_ratio, sentiment_label = _sentiment_summary(texts)
+    sentiment_ratio, sentiment_label = _sentiment_summary(reviews)
 
     score = min(
         1.0,
@@ -190,7 +211,7 @@ def analyze_reviews(reviews: List[Dict]) -> Dict:
         reasons.append("Unnatural rating burst detected (majority 5-star reviews).")
     if sentiment_ratio is not None and sentiment_label is not None:
         reasons.append(
-            f"DistilBERT sentiment sampling found the review set to be mostly {sentiment_label} "
+            f"Sentiment sampling found the review set to be mostly {sentiment_label} "
             f"({round(sentiment_ratio * 100)}% positive)."
         )
 

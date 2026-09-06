@@ -34,6 +34,9 @@ app.include_router(datasets_router.router)
 app.include_router(reports_router.router)
 
 
+import threading
+
+
 @app.on_event("startup")
 def on_startup():
     try:
@@ -42,11 +45,14 @@ def on_startup():
         # Don't fail startup if Postgres isn't available
         pass
 
-    try:
-        from app.ml.model_registry import warmup_best_model
-        warmup_best_model()
-    except Exception:
-        pass
+    def _warmup():
+        try:
+            from app.ml.model_registry import warmup_best_model
+            warmup_best_model()
+        except Exception:
+            pass
+
+    threading.Thread(target=_warmup, daemon=True, name="model_warmup").start()
 
 
 @app.get("/api/health")
