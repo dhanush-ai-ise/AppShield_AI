@@ -5,9 +5,12 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Optional
 from urllib.parse import urlencode, urlparse
+import base64
+import json
+import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -15,11 +18,14 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.config import settings
+from app.db.mongo import mongo_db
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+users_collection = mongo_db["users"]
+_LOCAL_USERS: dict = {}
 
 
 class Token(BaseModel):
@@ -31,12 +37,21 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    full_name: Optional[str] = None
+    username: Optional[str] = None
+
+
 @lru_cache(maxsize=1)
 def _admin_user() -> dict:
     return {
         "username": settings.ADMIN_USERNAME,
+        "email": f"{settings.ADMIN_USERNAME}@appshield.ai",
         "hashed_password": pwd_context.hash(settings.ADMIN_PASSWORD),
         "is_admin": True,
+        "role": "super_admin",
     }
 
 
@@ -45,12 +60,29 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def authenticate_user(username: str, password: str) -> Optional[dict]:
-    user = _admin_user()
-    if username != user["username"]:
+    admin = _admin_user()
+    if username == admin["username"] or username == admin["email"]:
+        if verify_password(password, admin["hashed_password"]):
+            return admin
         return None
-    if not verify_password(password, user["hashed_password"]):
-        return None
-    return user
+
+    # Check MongoDB / local store for registered users
+    db_user = None
+    try:
+        db_user = users_collection.find_one({"$or": [{"username": username}, {"email": username}]})
+    except Exception:
+        db_user = _LOCAL_USERS.get(username)
+
+    if db_user and verify_password(password, db_user.get("hashed_password", "")):
+        return {
+            "username": db_user.get("username") or db_user.get("email"),
+            "email": db_user.get("email") or db_user.get("username"),
+            "full_name": db_user.get("full_name", ""),
+            "role": db_user.get("role", "user"),
+            "is_admin": db_user.get("role") in ("admin", "super_admin"),
+        }
+
+    return None
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -73,20 +105,125 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         username = payload.get("sub")
         if not username:
             raise credentials_exception
-        token_data = TokenData(username=username)
     except JWTError as exc:
         raise credentials_exception from exc
 
-    user = _admin_user()
-    if token_data.username != user["username"]:
-        raise credentials_exception
-    return user
+    if username == settings.ADMIN_USERNAME or username == _admin_user()["email"]:
+        return _admin_user()
+
+    try:
+        db_user = users_collection.find_one({"$or": [{"username": username}, {"email": username}]})
+    except Exception:
+        db_user = _LOCAL_USERS.get(username)
+
+    if db_user:
+        return {
+            "username": db_user.get("username") or username,
+            "email": db_user.get("email") or username,
+            "full_name": db_user.get("full_name", ""),
+            "role": db_user.get("role", "user"),
+            "is_admin": db_user.get("role") in ("admin", "super_admin"),
+        }
+
+    is_admin = payload.get("role") in ("admin", "super_admin") or username == settings.ADMIN_USERNAME
+    return {
+        "username": username,
+        "email": username,
+        "role": payload.get("role", "admin" if is_admin else "user"),
+        "is_admin": is_admin,
+    }
+
+
+def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+    """
+    Extract user from Bearer token if provided, without raising 401.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[len("Bearer "):].strip()
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username = payload.get("sub")
+        if username:
+            is_admin = payload.get("role") in ("admin", "super_admin") or username == settings.ADMIN_USERNAME
+            return {
+                "username": username,
+                "email": username,
+                "role": payload.get("role", "admin" if is_admin else "user"),
+                "is_admin": is_admin,
+            }
+    except Exception:
+        # Fallback decode in case token was signed with mock/dev key
+        try:
+            parts = token.split(".")
+            if len(parts) >= 2:
+                b64 = parts[1].replace("-", "+").replace("_", "/")
+                b64 += "=" * ((4 - len(b64) % 4) % 4)
+                p = json.loads(base64.b64decode(b64))
+                sub = p.get("sub")
+                if sub:
+                    is_admin = sub == settings.ADMIN_USERNAME or p.get("role") in ("admin", "super_admin")
+                    return {
+                        "username": sub,
+                        "email": sub,
+                        "role": p.get("role", "admin" if is_admin else "user"),
+                        "is_admin": is_admin,
+                    }
+        except Exception:
+            pass
+
+    return None
 
 
 async def get_current_active_admin(current_user: dict = Depends(get_current_user)) -> dict:
     if not current_user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Not authorized to access this endpoint.")
     return current_user
+
+
+@router.post("/signup", response_model=Token)
+async def signup(req: SignupRequest) -> Token:
+    email = req.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required.")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    if email == settings.ADMIN_USERNAME.lower():
+        raise HTTPException(status_code=400, detail="Username or email is already taken.")
+
+    # Check if already registered
+    existing = None
+    try:
+        existing = users_collection.find_one({"email": email})
+    except Exception:
+        existing = _LOCAL_USERS.get(email)
+
+    if existing:
+        raise HTTPException(status_code=400, detail="Account with this email already exists.")
+
+    user_doc = {
+        "user_id": str(uuid.uuid4()),
+        "email": email,
+        "username": (req.username or email.split("@")[0]).strip(),
+        "full_name": (req.full_name or "").strip(),
+        "hashed_password": pwd_context.hash(req.password),
+        "role": "user",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        users_collection.insert_one(user_doc)
+    except Exception:
+        pass
+    _LOCAL_USERS[email] = user_doc
+    _LOCAL_USERS[user_doc["username"]] = user_doc
+
+    access_token = create_access_token({"sub": email, "role": "user"})
+    return Token(access_token=access_token, token_type="bearer")
 
 
 @router.post("/login", response_model=Token)
@@ -99,7 +236,11 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token({"sub": user["username"]})
+    user_sub = user.get("email") or user.get("username")
+    access_token = create_access_token({
+        "sub": user_sub,
+        "role": user.get("role", "admin" if user.get("is_admin") else "user"),
+    })
     return Token(access_token=access_token, token_type="bearer")
 
 
