@@ -114,7 +114,7 @@ export default function Sidebar() {
 
   return (
     <aside className={clsx(
-      "shrink-0 h-screen sticky top-0 flex flex-col transition-all duration-300 z-30",
+      "shrink-0 h-screen max-h-screen sticky top-0 flex flex-col overflow-hidden transition-all duration-300 z-30",
       isDark ? "bg-[#0c101d] border-r border-slate-800/80 text-white" : "bg-[#f0f3f9] border-r border-slate-200/80 text-slate-800",
       collapsed ? "w-20" : "w-64"
     )}>
