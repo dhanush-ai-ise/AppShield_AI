@@ -19,12 +19,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MAX_APK_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB max
-MAX_DOWNLOAD_SECONDS = 30
-CHUNK_SIZE = 128 * 1024  # 128 KB chunks
+MAX_APK_SIZE_BYTES = getattr(settings, "MAX_APK_SIZE_BYTES", 500 * 1024 * 1024)  # 500 MB max
+MAX_DOWNLOAD_SECONDS = getattr(settings, "MAX_DOWNLOAD_SECONDS", 300)  # 5 minutes
+CHUNK_SIZE = 256 * 1024  # 256 KB chunks
 
 
 def _stream_to_file(response, dest: Path, deadline: float):
+    max_mb = MAX_APK_SIZE_BYTES // (1024 * 1024)
     content_type = response.headers.get("content-type", "").lower()
     if "text/html" in content_type or "application/xhtml" in content_type:
         raise ValueError(
@@ -38,7 +39,7 @@ def _stream_to_file(response, dest: Path, deadline: float):
             cl = int(content_length)
             if cl > MAX_APK_SIZE_BYTES:
                 raise ValueError(
-                    f"APK file size ({cl // (1024 * 1024)}MB) exceeds the maximum allowed scan limit of 100MB."
+                    f"APK file size ({cl // (1024 * 1024)}MB) exceeds the maximum allowed scan limit of {max_mb}MB."
                 )
         except ValueError as val_err:
             if "exceeds" in str(val_err):
@@ -65,7 +66,7 @@ def _stream_to_file(response, dest: Path, deadline: float):
 
                 total_bytes += len(chunk)
                 if total_bytes > MAX_APK_SIZE_BYTES:
-                    raise ValueError("APK download exceeded maximum 100MB limit.")
+                    raise ValueError(f"APK download exceeded maximum {max_mb}MB limit.")
                 f.write(chunk)
 
 
@@ -91,13 +92,13 @@ def download_apk(url: str) -> Path:
 
     try:
         try:
-            with session.get(url, stream=True, timeout=(5, 15), headers=headers, verify=True, allow_redirects=True) as r:
+            with session.get(url, stream=True, timeout=(10, 30), headers=headers, verify=True, allow_redirects=True) as r:
                 r.raise_for_status()
                 _stream_to_file(r, dest, deadline)
             return dest
         except requests.exceptions.SSLError:
             logger.warning(f"SSL verification failed for {url}, retrying without verification")
-            with session.get(url, stream=True, timeout=(5, 15), headers=headers, verify=False, allow_redirects=True) as r:
+            with session.get(url, stream=True, timeout=(10, 30), headers=headers, verify=False, allow_redirects=True) as r:
                 r.raise_for_status()
                 _stream_to_file(r, dest, deadline)
             return dest

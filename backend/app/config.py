@@ -23,10 +23,12 @@ class Settings(BaseSettings):
     MONGO_DB: str = os.getenv("MONGO_DB", "appshield_reports")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # --- Storage paths ---
+    # --- Storage paths & limits ---
     DATASET_ROOT: Path = BASE_DIR.parent / "datasets"
     MODEL_ROOT: Path = BASE_DIR / "app" / "ml" / "trained_models"
     TEMP_APK_DIR: Path = BASE_DIR / "app" / "tmp_apks"  # deleted after analysis
+    MAX_APK_SIZE_BYTES: int = int(os.getenv("MAX_APK_SIZE_BYTES", str(500 * 1024 * 1024)))  # 500 MB max
+    MAX_DOWNLOAD_SECONDS: int = int(os.getenv("MAX_DOWNLOAD_SECONDS", "300"))  # 5 minutes
 
     # --- JWT Settings ---
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")

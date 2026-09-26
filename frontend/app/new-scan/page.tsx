@@ -263,14 +263,23 @@ export default function NewScanPage() {
                         {file ? file.name : "Click or drag & drop .apk file here"}
                       </p>
                       <p className="text-[10px] font-medium text-slate-400 mt-1">
-                        Supports Android package files up to 100MB
+                        Supports Android package files up to 500MB
                       </p>
                       <input
                         id="apk-file-input"
                         type="file"
                         accept=".apk"
                         className="hidden"
-                        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                        onChange={(e) => {
+                          const selected = e.target.files?.[0] ?? null;
+                          if (selected && selected.size > 500 * 1024 * 1024) {
+                            setError(`Selected file (${(selected.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum 500MB limit.`);
+                            setFile(null);
+                            return;
+                          }
+                          setError(null);
+                          setFile(selected);
+                        }}
                       />
                     </div>
                   ) : (

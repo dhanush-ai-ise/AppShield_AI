@@ -576,6 +576,13 @@ async def scan_apk_upload(
     apk_path = settings.TEMP_APK_DIR / f"{uuid.uuid4().hex}.apk"
     try:
         content = await file.read()
+        max_bytes = getattr(settings, "MAX_APK_SIZE_BYTES", 500 * 1024 * 1024)
+        if len(content) > max_bytes:
+            max_mb = max_bytes // (1024 * 1024)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Uploaded APK size ({len(content) // (1024 * 1024)}MB) exceeds maximum allowed limit of {max_mb}MB.",
+            )
         with open(apk_path, "wb") as f:
             f.write(content)
         apk_sha256 = sha256_of_file(apk_path)
