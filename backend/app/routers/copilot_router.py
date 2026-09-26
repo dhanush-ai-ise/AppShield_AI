@@ -153,9 +153,22 @@ async def chat_copilot(
     """
     prompt_str = (prompt or "").strip()
     
+    # Determine ML classifier model vs LLM Copilot model
+    # ML models are: lightgbm, random_forest, xgboost, catboost
+    ml_model_to_use = None
+    if model_name:
+        try:
+            from app.ml.model_registry import available_models
+            avail = available_models()
+            normalized = model_name.lower().replace("-", "_").strip()
+            if normalized in avail:
+                ml_model_to_use = normalized
+        except Exception:
+            ml_model_to_use = None
+
     # 1. Handle Direct APK File Upload via Chat
     if file:
-        upload_res = await scan.scan_apk_upload(file=file, model_name=model_name, current_user=current_user)
+        upload_res = await scan.scan_apk_upload(file=file, model_name=ml_model_to_use, current_user=current_user)
         app_name = upload_res.get("app_name", file.filename)
         score = upload_res.get("overall_risk_score", 0)
         pred = upload_res.get("prediction", "Unknown")
@@ -210,7 +223,7 @@ async def chat_copilot(
                 {"step": 4, "title": "Running ML analysis (LightGBM, XGBoost, etc.)...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Generating risk report and insights...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = await scan.scan_play_url(url=target, model_name=model_name, current_user=current_user)
+            scan_res = await scan.scan_play_url(url=target, model_name=ml_model_to_use, current_user=current_user)
         elif intent["type"] == "apk_url":
             steps = [
                 {"step": 1, "title": "Connecting to remote APK host...", "status": "completed", "time": "Just now"},
@@ -219,7 +232,7 @@ async def chat_copilot(
                 {"step": 4, "title": "Extracted permission vectors & feature matrix...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Completed AI threat scoring & verification...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = await scan.scan_apk_url(url=target, model_name=model_name, current_user=current_user)
+            scan_res = await scan.scan_apk_url(url=target, model_name=ml_model_to_use, current_user=current_user)
         elif intent["type"] == "package_name":
             steps = [
                 {"step": 1, "title": f"Resolving package ID: {target}...", "status": "completed", "time": "Just now"},
@@ -228,14 +241,14 @@ async def chat_copilot(
                 {"step": 4, "title": "Evaluated icon similarity & clone heuristics...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Generated comprehensive security evaluation...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = scan.scan_package_name(package_name=target, model_name=model_name, current_user=current_user)
+            scan_res = scan.scan_package_name(package_name=target, model_name=ml_model_to_use, current_user=current_user)
         elif intent["type"] == "hash":
             steps = [
                 {"step": 1, "title": f"Querying SHA-256 hash database: {target[:12]}...", "status": "completed", "time": "Just now"},
                 {"step": 2, "title": "Retrieved historical scan records & threat intel...", "status": "completed", "time": "Just now"},
                 {"step": 3, "title": "Compiled multi-engine classification results...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = scan.scan_by_hash(sha256=target, model_name=model_name, current_user=current_user)
+            scan_res = scan.scan_by_hash(sha256=target, model_name=ml_model_to_use, current_user=current_user)
             
         app_name = scan_res.get("app_name", target)
         score = scan_res.get("overall_risk_score", 0)
