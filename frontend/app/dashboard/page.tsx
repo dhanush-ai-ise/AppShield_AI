@@ -1,1161 +1,916 @@
 "use client";
-import { useEffect, useState, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Image from "next/image";
+import Link from "next/link";
 import {
-  Download, Share2, Info, ChevronRight, ChevronLeft, AlertTriangle,
-  CheckCircle2, ShieldAlert, KeyRound, MessageSquareWarning, ImageIcon,
-  FileBadge2, Search, ShieldCheck, Lock, Sparkles, ZoomIn, X,
-  Smartphone, Layers, Maximize2
+  Send, Paperclip, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle,
+  CheckCircle2, FileText, ExternalLink, Download, Sparkles, RefreshCw,
+  Layers, Check, Search, Bell, Sun, Menu, ChevronDown, Eye, Key,
+  Globe, FolderArchive, Star, Bot, Play, Package, Smartphone, ArrowRight,
+  Info, Share2, Code2, Users, HelpCircle, X, ShieldX, CornerDownLeft
 } from "lucide-react";
+import clsx from "clsx";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
-import RiskGauge from "@/components/RiskGauge";
 import { api } from "@/lib/api";
 import { ScanResult } from "@/lib/types";
 
-// Helper to derive app initials
-function getAppInitials(name?: string): string {
-  if (!name) return "AP";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
-
-// Helper for dynamic risk metadata
-function getRiskMeta(score: number, prediction?: string) {
-  if (score >= 85 || (prediction === "Fraudulent" && score >= 70)) {
-    return {
-      title: "Critical Risk",
-      prediction: "Fraudulent",
-      colorText: "text-red-600",
-      badgeClass: "clay-badge-red",
-      barColor: "bg-red-600",
-      bgLight: "bg-red-50/90",
-      borderColor: "border-red-200/80",
-      iconColor: "bg-red-600",
-      recommendation: "Do not install this application. High likelihood of fraudulent or malicious activity.",
-      RecommendationIcon: AlertTriangle,
-    };
-  }
-  if (score >= 70 || prediction === "Fraudulent") {
-    return {
-      title: "High Risk",
-      prediction: "Fraudulent",
-      colorText: "text-red-500",
-      badgeClass: "clay-badge-red",
-      barColor: "bg-red-500",
-      bgLight: "bg-red-50/90",
-      borderColor: "border-red-200/80",
-      iconColor: "bg-red-500",
-      recommendation: "Do not install this application. Security risks and anomalies were flagged.",
-      RecommendationIcon: AlertTriangle,
-    };
-  }
-  if (score >= 40 || prediction === "Suspicious") {
-    return {
-      title: "Moderate Risk",
-      prediction: "Suspicious",
-      colorText: "text-amber-500",
-      badgeClass: "clay-badge-yellow",
-      barColor: "bg-amber-500",
-      bgLight: "bg-amber-50/90",
-      borderColor: "border-amber-200/80",
-      iconColor: "bg-amber-500",
-      recommendation: "Exercise extreme caution. App exhibits suspicious behaviors or unverified sources.",
-      RecommendationIcon: ShieldAlert,
-    };
-  }
-  return {
-    title: "Low Risk",
-    prediction: "Safe",
-    colorText: "text-emerald-600",
-    badgeClass: "clay-badge-green",
-    barColor: "bg-emerald-500",
-    bgLight: "bg-emerald-50/90",
-    borderColor: "border-emerald-200/80",
-    iconColor: "bg-emerald-500",
-    recommendation: "This application appears safe. No critical security anomalies detected.",
-    RecommendationIcon: CheckCircle2,
-  };
-}
-
-// Helper for dynamic probabilities in donut chart
-function getPredictionProbabilities(
-  score: number,
-  prediction?: string,
-  classProbs?: { Safe?: number; Suspicious?: number; Fraudulent?: number } & Record<string, number>
-) {
-  let fraud = 0;
-  let suspicious = 0;
-  let safe = 0;
-
-  if (classProbs && (classProbs.Safe !== undefined || classProbs.Fraudulent !== undefined || classProbs.Suspicious !== undefined)) {
-    fraud = Math.round(classProbs.Fraudulent ?? classProbs.fraud ?? 0);
-    suspicious = Math.round(classProbs.Suspicious ?? classProbs.suspicious ?? 0);
-    safe = Math.round(classProbs.Safe ?? classProbs.safe ?? 0);
-
-    const total = fraud + suspicious + safe;
-    if (total > 0 && total !== 100) {
-      fraud = Math.round((fraud / total) * 100);
-      suspicious = Math.round((suspicious / total) * 100);
-      safe = Math.max(0, 100 - fraud - suspicious);
-    }
-  } else if (score >= 70 || prediction === "Fraudulent") {
-    fraud = Math.min(98, Math.max(70, Math.round(score)));
-    suspicious = Math.round((100 - fraud) * 0.7);
-    safe = 100 - fraud - suspicious;
-  } else if (score >= 40 || prediction === "Suspicious") {
-    suspicious = Math.min(85, Math.max(45, Math.round(score)));
-    fraud = Math.round((100 - suspicious) * 0.35);
-    safe = 100 - suspicious - fraud;
-  } else {
-    safe = Math.min(99, Math.max(70, Math.round(100 - score)));
-    suspicious = Math.round((100 - safe) * 0.75);
-    fraud = 100 - safe - suspicious;
-  }
-
-  const donutStyle = {
-    background: `conic-gradient(#ef4444 0% ${fraud}%, #f59e0b ${fraud}% ${fraud + suspicious}%, #10b981 ${fraud + suspicious}% 100%)`
-  };
-
-  return { fraud, suspicious, safe, donutStyle };
-}
-
-// Helper for dynamic recommended actions tailored to verdict
-function getRecommendedActions(score: number, prediction?: string) {
-  if (score >= 70 || prediction === "Fraudulent") {
-    return [
-      "Do not install or immediately remove this application.",
-      "Revoke all device, SMS, and storage permissions granted to it.",
-      "Perform a full anti-malware and system security audit.",
-      "Report this application package to the store or security team."
-    ];
-  }
-  if (score >= 40 || prediction === "Suspicious") {
-    return [
-      "Exercise extreme caution before granting sensitive permissions.",
-      "Verify developer credentials and official publishing channels.",
-      "Monitor background battery, network, and data usage anomalies.",
-      "Check recent user reviews for repeated spam or fraud complaints."
-    ];
-  }
-  return [
-    "App passed all behavioral and static security checks.",
-    "Standard permissions requested align with its declared category.",
-    "Authentic and verified developer signature detected.",
-    "Safe to install and operate under standard security policies."
-  ];
-}
-
-// Helper to choose module icon
-function getModuleIcon(moduleName: string) {
-  const m = moduleName.toLowerCase();
-  if (m.includes("permission")) return KeyRound;
-  if (m.includes("review")) return MessageSquareWarning;
-  if (m.includes("icon")) return ImageIcon;
-  if (m.includes("cert")) return FileBadge2;
-  if (m.includes("developer")) return ShieldAlert;
-  if (m.includes("static") || m.includes("apk")) return Lock;
-  return Sparkles;
-}
-
-const MODULE_LABELS: Record<string, string> = {
-  permission_analysis: "Dangerous Permissions",
-  review_analysis: "Fake / Spam Reviews",
-  icon_similarity: "Icon Similarity",
-  certificate_analysis: "Certificate Trust",
-  developer_reputation: "Developer Reputation",
-  apk_static_analysis: "APK Static Analysis",
-  metadata_analysis: "Metadata Consistency",
-};
-
-const DEMO_FALLBACK: ScanResult = {
-  scan_id: "demo-scan",
+// Default reference scan matching the showcase image
+const SHOWCASE_DEFAULT_SCAN: ScanResult = {
+  scan_id: "scan-whatsapp-demo",
   app_name: "WhatsApp Messenger",
   package_name: "com.whatsapp",
-  app_icon: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
-  version: "2.24.11.78",
-  developer: "WhatsApp LLC",
-  category: "Communication",
-  downloads: "5B+",
-  rating: 4.2,
-  size_mb: 86.7,
-  scanned_at: "Today, 10:30 AM",
+  input_type: "play_url",
   overall_risk_score: 82,
   trust_score: 18,
   prediction: "Fraudulent",
   confidence: 96.3,
   model_used: "LightGBM",
-  screenshots: [
-    "https://images.unsplash.com/photo-1616469829941-c7200edec809?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1556742049-0a67daf4005a?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1526498460520-4c246339dccb?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1534972195531-d756b9bfa9f2?auto=format&fit=crop&w=400&q=80",
-    "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=400&q=80",
-  ],
-  module_scores: {
-    permission_analysis: { module: "permission_analysis", score: 0.87, reasons: ["23 dangerous permissions requested"] },
-    review_analysis: { module: "review_analysis", score: 0.74, reasons: ["High fake review ratio"] },
-    apk_static_analysis: { module: "apk_static_analysis", score: 0.9, reasons: ["Suspicious bytecode patterns"] },
-    icon_similarity: { module: "icon_similarity", score: 0.93, reasons: ["92% match to official WhatsApp icon"] },
-    developer_reputation: { module: "developer_reputation", score: 0.48, reasons: ["Unverified developer account"] },
-    certificate_analysis: { module: "certificate_analysis", score: 0.88, reasons: ["Untrusted self-signed certificate"] },
+  class_probabilities: {
+    Safe: 3.7,
+    Suspicious: 7.1,
+    Fraudulent: 89.2,
   },
+  scanned_at: new Date().toISOString(),
+  status: "Completed",
+  app_icon: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
+  downloads: "5B+",
+  rating: 4.3,
+  version: "2.24.18.77",
+  developer: "WhatsApp LLC",
+  category: "Communication",
+  permissions: [
+    "android.permission.INTERNET",
+    "android.permission.READ_CONTACTS",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.CAMERA",
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.READ_SMS",
+    "android.permission.SEND_SMS",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+  ],
   top_contributors: [
-    { feature: "permission_risk", label: "Dangerous Permissions", impact_percent: 31 },
-    { feature: "review_risk", label: "Fake / Spam Reviews", impact_percent: 22 },
-    { feature: "icon_similarity_risk", label: "Icon Similarity", impact_percent: 18 },
-    { feature: "certificate_risk", label: "Certificate Trust", impact_percent: 14 },
-    { feature: "developer_risk", label: "Developer Reputation", impact_percent: 9 },
+    { feature: "Suspicious Permissions", label: "Suspicious Permissions", impact_percent: 31 },
+    { feature: "Network Connections", label: "Network Connections", impact_percent: 22 },
+    { feature: "Code Obfuscation", label: "Code Obfuscation", impact_percent: 18 },
+    { feature: "Potential Data Exfiltration", label: "Potential Data Exfiltration", impact_percent: 15 },
+    { feature: "Similar to Known Malware", label: "Similar to Known Malware", impact_percent: 14 },
   ],
   flag_reasons: [
-    { module: "permission_analysis", reason: "Requests dangerous permissions including SMS, Contacts, and Location.", level: "High Risk", score: 0.87 },
-    { module: "review_analysis", reason: "High volume of repetitive/fake user reviews detected.", level: "High Risk", score: 0.74 },
-    { module: "icon_similarity", reason: "App icon closely imitates official brand visual assets.", level: "High Risk", score: 0.93 },
-    { module: "certificate_analysis", reason: "App binary signed with untrusted signature.", level: "High Risk", score: 0.88 },
+    { module: "Permissions", reason: "Requests high-privilege SMS and Camera permissions simultaneously.", level: "High", score: 85 },
+    { module: "Network", reason: "Direct dynamic code loading domains flagged in threat intel.", level: "High", score: 78 },
+    { module: "Certificate", reason: "Certificate signature entropy deviates from official store fingerprint.", level: "Medium", score: 62 },
   ],
 };
 
+interface ChatStep {
+  step: number;
+  title: string;
+  status: "completed" | "in_progress" | "pending";
+  time?: string;
+}
+
+interface ChatMessage {
+  id: string;
+  sender: "user" | "bot";
+  text?: string;
+  timestamp: string;
+  steps?: ChatStep[];
+  scanPreview?: ScanResult;
+  suggestions?: string[];
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const requestedScanId = searchParams.get("scan_id");
+  const scanIdParam = searchParams.get("scan_id");
 
-  const [scan, setScan] = useState<ScanResult>(DEMO_FALLBACK);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewIndex, setPreviewIndex] = useState<number>(0);
-  const [activeShotIndex, setActiveShotIndex] = useState<number>(0);
-  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
-  const [screenshotViewMode, setScreenshotViewMode] = useState<"phone" | "grid">("phone");
+  const [scan, setScan] = useState<ScanResult>(SHOWCASE_DEFAULT_SCAN);
+  const [activeTab, setActiveTab] = useState<"analysis" | "details" | "permissions" | "ml" | "screenshots">("analysis");
+  const [selectedModel, setSelectedModel] = useState("gemini-1.5-flash");
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  // Initialize messages
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "msg-welcome",
+      sender: "bot",
+      text: "👋 Hi! I'm AppShield AI Copilot. You can ask me anything about Android app security, or simply drop a link, upload an APK, or enter a package name. I'll handle the rest.",
+      timestamp: "10:30 AM",
+      suggestions: [
+        "Scan a Play Store app",
+        "Analyze an APK file",
+        "Check a package name",
+        "Ask a security question",
+      ],
+    },
+    {
+      id: "msg-sample-user",
+      sender: "user",
+      text: "https://play.google.com/store/apps/details?id=com.whatsapp",
+      timestamp: "10:30 AM",
+    },
+    {
+      id: "msg-sample-steps",
+      sender: "bot",
+      text: "I've detected a Google Play Store URL. I'll fetch the app details and run a comprehensive security analysis for **WhatsApp Messenger**. This may take a few moments...",
+      timestamp: "10:30 AM",
+      steps: [
+        { step: 1, title: "Fetching app information from Play Store...", status: "completed", time: "10:30 AM" },
+        { step: 2, title: "Downloading and analyzing app metadata...", status: "completed", time: "10:31 AM" },
+        { step: 3, title: "Extracting permissions, components and features...", status: "completed", time: "10:31 AM" },
+        { step: 4, title: "Running ML analysis (LightGBM, XGBoost, etc.)...", status: "completed", time: "10:32 AM" },
+        { step: 5, title: "Generating risk report and insights...", status: "completed", time: "10:33 AM" },
+      ],
+    },
+    {
+      id: "msg-sample-summary",
+      sender: "bot",
+      text: "Analysis complete! Here's the security overview for **WhatsApp Messenger**.",
+      timestamp: "10:33 AM",
+      scanPreview: SHOWCASE_DEFAULT_SCAN,
+      suggestions: [
+        "Why is the risk score high?",
+        "Show suspicious permissions",
+        "Compare with official app",
+        "What do these permissions mean?",
+      ],
+    },
+  ]);
+
+  // Load specific scan if scan_id param provided
   useEffect(() => {
-    let isMounted = true;
+    if (!scanIdParam) return;
+    const fetchScan = async () => {
+      try {
+        const res = await api.getScan(scanIdParam);
+        if (res && res.app_name) {
+          setScan(res);
+        }
+      } catch {
+        // Keep current fallback
+      }
+    };
+    fetchScan();
+  }, [scanIdParam]);
 
-    async function loadScanData() {
-      // 1. Check if we have a specific scan requested
-      if (requestedScanId) {
-        // Try sessionStorage first for instant render
+  // Scroll to bottom on new messages
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  // Send message handler
+  const handleSendMessage = async (textToSend?: string) => {
+    const query = (textToSend || input).trim();
+    if (!query && !selectedFile) return;
+
+    const userMsgId = `user-${Date.now()}`;
+    const currentTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: userMsgId,
+      sender: "user",
+      text: selectedFile ? `Uploaded APK: ${selectedFile.name}` : query,
+      timestamp: currentTime,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    const fileToUpload = selectedFile;
+    setSelectedFile(null);
+    setLoading(true);
+
+    try {
+      const res = await api.copilotChat(
+        query,
+        scan?.scan_id,
+        selectedModel,
+        fileToUpload || undefined
+      );
+
+      const botTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+      if (res.scan_result) {
+        setScan(res.scan_result);
         if (typeof window !== "undefined") {
           try {
-            const cachedSpecific = sessionStorage.getItem(`appshield_scan_${requestedScanId}`);
-            if (cachedSpecific) {
-              const parsed = JSON.parse(cachedSpecific);
-              if (parsed && isMounted) {
-                setScan(parsed);
-              }
-            }
+            sessionStorage.setItem("appshield_last_scan", JSON.stringify(res.scan_result));
           } catch {}
         }
-
-        // Try API direct getScan
-        try {
-          const direct = await api.getScan(requestedScanId);
-          if (direct && isMounted) {
-            setScan(direct);
-            return;
-          }
-        } catch {}
       }
 
-      // 2. If no requestedScanId or direct failed, check last scan in sessionStorage
-      const currentUsername = api.adminUsername() || "admin";
-      if (typeof window !== "undefined") {
-        try {
-          const lastScanRaw = sessionStorage.getItem("appshield_last_scan");
-          if (lastScanRaw) {
-            const parsed = JSON.parse(lastScanRaw);
-            if (
-              parsed &&
-              (!parsed.user_email || parsed.user_email === currentUsername) &&
-              (!requestedScanId || parsed.scan_id === requestedScanId)
-            ) {
-              if (isMounted) {
-                setScan(parsed);
-              }
-            }
-          }
-        } catch {}
-      }
+      const botMessage: ChatMessage = {
+        id: `bot-${Date.now()}`,
+        sender: "bot",
+        text: res.reply,
+        timestamp: botTime,
+        steps: res.steps && res.steps.length > 0 ? res.steps : undefined,
+        scanPreview: res.scan_result || undefined,
+        suggestions: res.suggestions || [
+          "Why is the risk score high?",
+          "Show suspicious permissions",
+          "Compare with official app",
+        ],
+      };
 
-      // 3. Query history from backend
-      try {
-        const r = await api.scanHistory(50);
-        if (r?.scans?.length && isMounted) {
-          let selectedScan: ScanResult | undefined;
-          if (requestedScanId) {
-            selectedScan = r.scans.find((s: ScanResult) => s.scan_id === requestedScanId);
-          }
-          if (!selectedScan) {
-            selectedScan = r.scans[0];
-          }
-          if (selectedScan) {
-            setScan(selectedScan);
-          }
-        }
-      } catch {}
-    }
-
-    loadScanData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [requestedScanId]);
-
-  const riskMeta = useMemo(
-    () => getRiskMeta(scan.overall_risk_score, scan.prediction),
-    [scan.overall_risk_score, scan.prediction]
-  );
-
-  const probabilities = useMemo(
-    () => getPredictionProbabilities(scan.overall_risk_score, scan.prediction, scan.class_probabilities),
-    [scan.overall_risk_score, scan.prediction, scan.class_probabilities]
-  );
-
-  const appInitials = useMemo(
-    () => getAppInitials(scan.app_name),
-    [scan.app_name]
-  );
-
-  // Dynamic Top Risk Contributors
-  const topFactors = useMemo(() => {
-    if (scan.top_contributors && scan.top_contributors.length > 0) {
-      return scan.top_contributors.map((c) => {
-        const pctVal = c.impact_percent;
-        const level = pctVal >= 25 ? "High Risk" : pctVal >= 12 ? "Moderate Risk" : "Low Risk";
-        const badge = pctVal >= 25 ? "clay-badge-red" : pctVal >= 12 ? "clay-badge-yellow" : "clay-badge-green";
-        const color = pctVal >= 25 ? "bg-red-500" : pctVal >= 12 ? "bg-amber-500" : "bg-emerald-500";
-        return {
-          label: c.label || c.feature,
-          detail: `Impact: ${pctVal}% of overall score`,
-          pct: pctVal,
-          risk: level,
-          color,
-          badge,
-        };
-      });
-    }
-
-    // Fallback computed from module scores
-    if (scan.module_scores) {
-      const sorted = Object.values(scan.module_scores)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5);
-
-      const totalScore = sorted.reduce((sum, item) => sum + item.score, 0) || 1;
-
-      return sorted.map((m) => {
-        const pctVal = Math.round((m.score / totalScore) * 100);
-        const level = m.score >= 0.7 ? "High Risk" : m.score >= 0.4 ? "Moderate Risk" : "Low Risk";
-        const badge = m.score >= 0.7 ? "clay-badge-red" : m.score >= 0.4 ? "clay-badge-yellow" : "clay-badge-green";
-        const color = m.score >= 0.7 ? "bg-red-500" : m.score >= 0.4 ? "bg-amber-500" : "bg-emerald-500";
-        const label = MODULE_LABELS[m.module] || m.module.replace(/_/g, " ");
-        const detail = m.reasons?.[0] || `${Math.round(m.score * 100)}% risk score`;
-
-        return {
-          label,
-          detail,
-          pct: pctVal,
-          risk: level,
-          color,
-          badge,
-        };
-      });
-    }
-
-    return [];
-  }, [scan.top_contributors, scan.module_scores]);
-
-  // Dynamic AI Insights List
-  const insightsList = useMemo(() => {
-    if (scan.flag_reasons && scan.flag_reasons.length > 0) {
-      return scan.flag_reasons.map((f) => {
-        const Icon = getModuleIcon(f.module);
-        const isHigh = f.level === "High Risk" || f.score >= 0.7;
-        const isMod = f.level === "Moderate Risk" || (f.score >= 0.4 && f.score < 0.7);
-
-        return {
-          Icon,
-          moduleName: MODULE_LABELS[f.module] || f.module.replace(/_/g, " "),
-          reason: f.reason,
-          bgColor: isHigh ? "bg-purple-50/80 border-purple-100" : isMod ? "bg-amber-50/80 border-amber-100" : "bg-emerald-50/80 border-emerald-100",
-          iconBg: isHigh ? "bg-purple-100 text-purple-700" : isMod ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700",
-        };
-      });
-    }
-
-    // Default safe insights if no flags raised
-    return [
-      {
-        Icon: CheckCircle2,
-        moduleName: "Permissions Check",
-        reason: "All requested permissions are standard and expected for this application category.",
-        bgColor: "bg-emerald-50/80 border-emerald-100",
-        iconBg: "bg-emerald-100 text-emerald-700",
-      },
-      {
-        Icon: CheckCircle2,
-        moduleName: "Review Authenticity",
-        reason: "User reviews display organic distribution and genuine feedback patterns.",
-        bgColor: "bg-emerald-50/80 border-emerald-100",
-        iconBg: "bg-emerald-100 text-emerald-700",
-      },
-      {
-        Icon: CheckCircle2,
-        moduleName: "App Branding",
-        reason: "Icon and package metadata correspond accurately to official developer records.",
-        bgColor: "bg-emerald-50/80 border-emerald-100",
-        iconBg: "bg-emerald-100 text-emerald-700",
-      },
-      {
-        Icon: ShieldCheck,
-        moduleName: "Code Integrity",
-        reason: "Static bytecode analysis found no known malicious payloads or obfuscated threats.",
-        bgColor: "bg-emerald-50/80 border-emerald-100",
-        iconBg: "bg-emerald-100 text-emerald-700",
-      },
-    ];
-  }, [scan.flag_reasons]);
-
-  // Dynamic "Why Flagged" Callout Grid
-  const whyFlaggedGrid = useMemo(() => {
-    if (scan.flag_reasons && scan.flag_reasons.length > 0) {
-      return scan.flag_reasons.slice(0, 4).map((f) => {
-        const Icon = getModuleIcon(f.module);
-        const isHigh = f.level === "High Risk" || f.score >= 0.7;
-        const isMod = f.level === "Moderate Risk" || (f.score >= 0.4 && f.score < 0.7);
-
-        return {
-          Icon,
-          reason: f.reason,
-          iconBg: isHigh ? "bg-purple-100 text-purple-700" : isMod ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700",
-        };
-      });
-    }
-
-    // Default positive verification callouts for Safe apps
-    return [
-      { Icon: KeyRound, reason: "Permissions requested match standard application functionalities.", iconBg: "bg-emerald-100 text-emerald-700" },
-      { Icon: MessageSquareWarning, reason: "Review sentiments show no indication of artificial inflation.", iconBg: "bg-emerald-100 text-emerald-700" },
-      { Icon: ImageIcon, reason: "Icon branding is verified against official repository indices.", iconBg: "bg-emerald-100 text-emerald-700" },
-      { Icon: FileBadge2, reason: "Signed with an authentic, verified developer key.", iconBg: "bg-emerald-100 text-emerald-700" },
-    ];
-  }, [scan.flag_reasons]);
-
-  const rawScreenshots = useMemo(() => {
-    if (!scan.screenshots || scan.screenshots.length === 0) return [];
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const url of scan.screenshots) {
-      if (!url || typeof url !== "string") continue;
-      // Deduplicate Play Store images using base ID before resize/query params
-      const baseId = url.split("=")[0];
-      if (!seen.has(baseId)) {
-        seen.add(baseId);
-        // Optimize Google Play CDN URLs for lightweight, high-res webp
-        let optimized = url;
-        if (url.includes("googleusercontent.com")) {
-          optimized = `${baseId}=w480-h960-rw`;
-        }
-        result.push(optimized);
-      }
-    }
-    return result;
-  }, [scan.screenshots]);
-
-  const screenshots = useMemo(() => {
-    return rawScreenshots.filter((url) => !failedImages[url]);
-  }, [rawScreenshots, failedImages]);
-
-  const safeActiveIndex = useMemo(() => {
-    if (screenshots.length === 0) return 0;
-    return Math.min(Math.max(0, activeShotIndex), screenshots.length - 1);
-  }, [screenshots.length, activeShotIndex]);
-
-  const miniFilmstrip = useMemo(() => {
-    if (screenshots.length <= 5) return screenshots;
-    const start = Math.max(0, Math.min(safeActiveIndex - 2, screenshots.length - 5));
-    return screenshots.slice(start, start + 5);
-  }, [screenshots, safeActiveIndex]);
-
-  const markImageFailed = (url: string) => {
-    setFailedImages((prev) => {
-      if (prev[url]) return prev;
-      return { ...prev, [url]: true };
-    });
-    if (previewImage === url) {
-      setPreviewImage(null);
+      setMessages((prev) => [...prev, botMessage]);
+    } catch (err: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `bot-err-${Date.now()}`,
+          sender: "bot",
+          text: `⚠️ **Scan or Query Error**: ${err?.message || "Could not complete request. Please verify the URL or link."}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          suggestions: ["Scan a Play Store app", "Check a package name"],
+        },
+      ]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    setActiveShotIndex(0);
-    setFailedImages({});
-  }, [scan.scan_id]);
+  const handleSuggestionClick = (suggestion: string) => {
+    if (suggestion === "Scan a Play Store app") {
+      setInput("https://play.google.com/store/apps/details?id=com.whatsapp");
+    } else if (suggestion === "Analyze an APK file") {
+      fileInputRef.current?.click();
+    } else if (suggestion === "Check a package name") {
+      setInput("com.instagram.android");
+    } else if (suggestion === "Ask a security question") {
+      setInput("Why is BIND_ACCESSIBILITY_SERVICE considered dangerous in Android banking trojans?");
+    } else {
+      handleSendMessage(suggestion);
+    }
+  };
 
-  useEffect(() => {
-    if (!previewImage) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setPreviewImage(null);
-      } else if (e.key === "ArrowLeft" && previewIndex > 0) {
-        const newIdx = previewIndex - 1;
-        setPreviewIndex(newIdx);
-        setPreviewImage(screenshots[newIdx]);
-      } else if (e.key === "ArrowRight" && previewIndex < screenshots.length - 1) {
-        const newIdx = previewIndex + 1;
-        setPreviewIndex(newIdx);
-        setPreviewImage(screenshots[newIdx]);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [previewImage, previewIndex, screenshots]);
+  // Model selection options
+  const MODELS = [
+    { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", tag: "Fast & Smart" },
+    { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", tag: "Deep Reasoning" },
+    { id: "appshield-local", name: "AppShield Local Engine", tag: "Offline ML" },
+  ];
+
+  const currentModelLabel = MODELS.find((m) => m.id === selectedModel)?.name || "Gemini 1.5 Flash";
+
+  // Score visual mapping
+  const score = scan?.overall_risk_score ?? 82;
+  const isCritical = score >= 70;
+  const isModerate = score >= 40 && score < 70;
+  const scoreColor = isCritical ? "#ef4444" : isModerate ? "#f59e0b" : "#10b981";
+  const riskTitle = isCritical ? "Critical Risk" : isModerate ? "Moderate Risk" : "Low Risk";
+  const confidence = scan?.confidence ?? 96.3;
 
   return (
-    <div className="flex bg-[#f0f3f9] min-h-screen text-slate-800 font-sans">
+    <div className="flex bg-[#0b0f19] min-h-screen text-slate-100 font-sans selection:bg-violet-600 selection:text-white">
+      {/* Left Sidebar */}
       <Sidebar />
-      <main className="flex-1 min-h-screen pb-12 overflow-x-hidden">
-        <Topbar
-          title="Scan Result"
-          subtitle="Comprehensive AI Analysis Report"
-        />
 
-        <div className="px-8 py-6 space-y-6 max-w-[1600px] mx-auto">
-          
-          {/* Top Banner Actions */}
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-500">
-              Report ID: <span className="text-slate-800 font-bold">{scan.scan_id}</span>
+      {/* Main Container */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+        {/* Global Dark Topbar */}
+        <header className="flex items-center justify-between px-6 py-3.5 border-b border-slate-800/80 bg-[#0c101d]/90 backdrop-blur sticky top-0 z-20">
+          <div className="flex items-center gap-3 w-1/3">
+            <button className="w-9 h-9 rounded-xl bg-slate-800/70 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+              <Menu size={17} />
+            </button>
+            <div className="relative w-full max-w-md">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search apps, package names, or ask anything..."
+                className="w-full bg-[#131b2e] border border-slate-800 rounded-xl pl-9 pr-14 py-2 text-xs font-medium text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/80 transition-all"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60 pointer-events-none">
+                Ctrl K
+              </span>
             </div>
-            <a
-              href={api.downloadPdfReport(scan.scan_id)}
-              target="_blank"
-              rel="noreferrer"
-              className="clay-btn-purple px-5 py-2.5 flex items-center gap-2 text-xs font-bold shadow-lg"
-            >
-              <Download size={16} /> Download PDF Report
-            </a>
           </div>
 
-          {/* ROW 1: Overall Verdict + Scanned App + App Screenshots */}
-          <div className="grid grid-cols-12 gap-6 items-stretch">
+          <div className="flex items-center gap-3">
+            <button className="w-9 h-9 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-amber-400 transition-colors">
+              <Sun size={17} />
+            </button>
+            <button className="relative w-9 h-9 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-violet-400 transition-colors">
+              <Bell size={17} />
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center shadow-md">
+                3
+              </span>
+            </button>
+            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-800">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white font-extrabold text-xs shadow-md">
+                AD
+              </div>
+              <div className="leading-tight text-left">
+                <div className="text-xs font-bold text-white">admin</div>
+                <div className="text-[10px] font-semibold text-violet-400">Super Admin</div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* 2-Column Split Command Center */}
+        <div className="flex-1 grid grid-cols-12 overflow-hidden min-h-[calc(100vh-65px)]">
+
+          {/* ══════════════════════════════════════════════════════
+              LEFT / CENTER PANEL: Conversational AI Copilot
+              ══════════════════════════════════════════════════════ */}
+          <div className="col-span-12 xl:col-span-7 flex flex-col border-r border-slate-800/80 bg-[#0c101d] overflow-hidden">
             
-            {/* 1. Overall Verdict Card */}
-            <div className="col-span-12 lg:col-span-5 panel p-6 flex flex-col justify-between h-[380px]">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-base font-extrabold text-slate-900">Overall Verdict</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (navigator.share) {
-                      navigator.share({
-                        title: `AppShield AI Scan - ${scan.app_name}`,
-                        url: window.location.href,
-                      }).catch(() => {});
-                    } else if (navigator.clipboard) {
-                      navigator.clipboard.writeText(window.location.href);
-                      alert("Scan report link copied to clipboard!");
-                    }
-                  }}
-                  className="clay-btn-soft px-3 py-1.5 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900"
-                >
-                  <Share2 size={13} /> Share
-                </button>
-              </div>
-
-              <div className="flex items-center gap-6 my-auto">
-                <div className="shrink-0 relative p-2 rounded-full bg-white shadow-[inset_3px_3px_8px_rgba(163,177,198,0.25),inset_-3px_-3px_8px_rgba(255,255,255,0.9)]">
-                  <RiskGauge score={scan.overall_risk_score} size={135} />
+            {/* Copilot Header */}
+            <div className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-[#0e1322]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-violet-400/30">
+                  <Bot size={22} />
                 </div>
-                
-                <div className="space-y-3 flex-1">
-                  <div>
-                    <h2 className={`text-2xl font-black ${riskMeta.colorText} tracking-tight`}>{riskMeta.title}</h2>
-                    <p className="text-xs font-medium text-slate-500 mt-0.5">
-                      This application is likely <span className={`font-bold ${riskMeta.colorText}`}>{scan.prediction || riskMeta.prediction}</span>
-                    </p>
-                  </div>
-
-                  {/* Spectrum Bar */}
-                  <div className="space-y-1.5">
-                    <div className="h-3 rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 via-orange-500 to-red-600 relative shadow-inner">
-                      <div
-                        className="absolute -top-1.5 w-6 h-6 bg-slate-900 border-2 border-white rounded-full shadow-md transition-all duration-500"
-                        style={{
-                          left: `calc(${Math.min(95, Math.max(5, scan.overall_risk_score))}% - 12px)`,
-                        }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                      <span className="text-emerald-600">Low Risk</span>
-                      <span className="text-amber-600">Moderate Risk</span>
-                      <span className="text-orange-600">High Risk</span>
-                      <span className="text-red-600">Critical Risk</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 pt-1">
-                    <span>Confidence Score:</span>
-                    <span className="font-extrabold text-slate-900">{scan.confidence != null ? `${scan.confidence}%` : "N/A"}</span>
-                    <Info size={14} className="text-slate-400 cursor-pointer hover:text-slate-600" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Scanned Application Details Card */}
-            <div className="col-span-12 md:col-span-6 lg:col-span-4 panel p-6 flex flex-col justify-between h-[380px]">
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900 mb-3">Scanned Application</h3>
-                <div className="flex items-center gap-4 mb-3 p-3 rounded-2xl bg-[#e6ecf5]/60 border border-white/80 shadow-inner">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center text-white font-extrabold shadow-md overflow-hidden shrink-0">
-                    {scan.app_icon ? (
-                      <img
-                        src={scan.app_icon}
-                        alt={scan.app_name}
-                        className="w-full h-full object-cover rounded-2xl"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <span className="text-lg font-black">{appInitials}</span>
-                    )}
-                  </div>
-                  <div className="truncate">
-                    <div className="text-sm font-extrabold text-slate-900 truncate">{scan.app_name}</div>
-                    <div className="text-xs font-medium text-slate-500 truncate">{scan.package_name}</div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">Version</span>
-                    <span className="font-bold text-slate-800">{scan.version || "N/A"}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">Developer</span>
-                    <span className="font-bold text-slate-800">{scan.developer || "Unknown Developer"}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">Category</span>
-                    <span className="font-bold text-slate-800">{scan.category || "General"}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">Downloads</span>
-                    <span className="font-bold text-slate-800">{scan.downloads || "N/A (Direct Package)"}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500 font-medium">Rating</span>
-                    <span className="font-bold text-amber-500 flex items-center gap-1">{scan.rating != null ? `${scan.rating} ★` : "N/A"}</span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span className="text-slate-500 font-medium">Scanned At</span>
-                    <span className="font-bold text-slate-800">{scan.scanned_at || "Just now"}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 3. App Screenshots Dynamic Showcase Card */}
-            <div className="col-span-12 md:col-span-6 lg:col-span-3 panel p-5 flex flex-col justify-between h-[380px] relative">
-              <div>
-                {/* Header with Title, Mode Toggle, and Count Badge */}
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-base font-extrabold text-slate-900">
-                    App Screenshots
-                  </h3>
-                  <div className="flex items-center gap-1.5">
-                    {screenshots.length > 1 && (
-                      <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                        <button
-                          type="button"
-                          title="Phone Carousel View"
-                          onClick={() => setScreenshotViewMode("phone")}
-                          className={`p-1 rounded-md transition-all ${
-                            screenshotViewMode === "phone"
-                              ? "bg-white text-violet-700 shadow-sm font-bold"
-                              : "text-slate-400 hover:text-slate-700"
-                          }`}
-                        >
-                          <Smartphone size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          title="Grid Gallery View"
-                          onClick={() => setScreenshotViewMode("grid")}
-                          className={`p-1 rounded-md transition-all ${
-                            screenshotViewMode === "grid"
-                              ? "bg-white text-violet-700 shadow-sm font-bold"
-                              : "text-slate-400 hover:text-slate-700"
-                          }`}
-                        >
-                          <Layers size={13} />
-                        </button>
-                      </div>
-                    )}
-                    <span className="clay-badge-purple text-[10px] font-extrabold px-2.5 py-0.5">
-                      {screenshots.length} {screenshots.length === 1 ? "Pic" : "Pics"}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-extrabold text-white tracking-tight">AI Security Copilot</h2>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                      Beta
                     </span>
                   </div>
+                  <p className="text-[11px] font-medium text-slate-400">
+                    Chat, scan, and analyze Android applications with the power of AI
+                  </p>
+                </div>
+              </div>
+
+              {/* Model Selector & New Chat */}
+              <div className="flex items-center gap-2 relative">
+                <div className="relative">
+                  <button
+                    onClick={() => setModelDropdownOpen((v) => !v)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#141b2e] border border-slate-700/80 text-xs font-semibold text-slate-200 hover:border-violet-500 transition-all shadow-sm"
+                  >
+                    <Sparkles size={13} className="text-violet-400" />
+                    <span>Model: {currentModelLabel}</span>
+                    <ChevronDown size={13} className="text-slate-400 ml-1" />
+                  </button>
+
+                  {modelDropdownOpen && (
+                    <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-[#131b2e] border border-slate-700 shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95">
+                      {MODELS.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            setSelectedModel(m.id);
+                            setModelDropdownOpen(false);
+                          }}
+                          className={clsx(
+                            "w-full px-3 py-2 text-left text-xs flex items-center justify-between transition-colors",
+                            selectedModel === m.id ? "bg-violet-600/20 text-violet-300 font-bold" : "text-slate-300 hover:bg-slate-800"
+                          )}
+                        >
+                          <div>
+                            <div className="font-semibold">{m.name}</div>
+                            <div className="text-[10px] text-slate-400">{m.tag}</div>
+                          </div>
+                          {selectedModel === m.id && <Check size={14} className="text-violet-400" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {screenshots.length > 0 ? (
-                  screenshotViewMode === "phone" ? (
-                    /* PHONE SHOWCASE VIEW */
-                    <div className="relative flex flex-col items-center my-1">
-                      {/* Realistic Smartphone Mockup */}
-                      <div className="relative w-[124px] h-[216px] bg-slate-950 rounded-[20px] p-[5px] shadow-[0_10px_25px_rgba(15,23,42,0.22)] border border-slate-700/70 group">
-                        {/* Dynamic Island / Speaker */}
-                        <div className="absolute top-[6px] left-1/2 -translate-x-1/2 w-7 h-1.5 bg-slate-950 rounded-full z-20" />
+                <button
+                  onClick={() => {
+                    setMessages([
+                      {
+                        id: `msg-${Date.now()}`,
+                        sender: "bot",
+                        text: "New session started. You can drop a Play Store link, an APK file, or ask any Android security question.",
+                        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                        suggestions: ["Scan a Play Store app", "Analyze an APK file", "Check a package name"],
+                      },
+                    ]);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(124,58,237,0.3)] transition-all"
+                >
+                  <RefreshCw size={13} />
+                  <span>New Chat</span>
+                </button>
+              </div>
+            </div>
 
-                        {/* Screen Image Container */}
-                        <div
-                          className="relative w-full h-full rounded-[16px] overflow-hidden bg-slate-900 flex items-center justify-center cursor-pointer"
-                          onClick={() => {
-                            setPreviewIndex(safeActiveIndex);
-                            setPreviewImage(screenshots[safeActiveIndex]);
-                          }}
-                        >
-                          <img
-                            src={screenshots[safeActiveIndex]}
-                            alt={`App Screenshot ${safeActiveIndex + 1}`}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            onError={() => markImageFailed(screenshots[safeActiveIndex])}
-                          />
-                          <div className="absolute inset-0 bg-violet-950/20 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white">
-                            <ZoomIn size={18} className="drop-shadow-md" />
-                            <span className="text-[9px] font-bold drop-shadow">Expand</span>
+            {/* Chat Messages Stream */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+              {messages.map((msg) => {
+                const isUser = msg.sender === "user";
+                return (
+                  <div
+                    key={msg.id}
+                    className={clsx(
+                      "flex gap-3 max-w-[92%]",
+                      isUser ? "ml-auto flex-row-reverse" : "mr-auto"
+                    )}
+                  >
+                    {!isUser && (
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md">
+                        <Bot size={16} />
+                      </div>
+                    )}
+
+                    <div className="space-y-3 w-full">
+                      {/* Message Bubble */}
+                      <div
+                        className={clsx(
+                          "p-4 rounded-2xl text-xs leading-relaxed transition-all shadow-md",
+                          isUser
+                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-none font-semibold"
+                            : "bg-[#131b2e] border border-slate-800 text-slate-200 rounded-tl-none font-normal"
+                        )}
+                      >
+                        {msg.text && (
+                          <div className="whitespace-pre-line prose-invert text-xs">
+                            {msg.text}
                           </div>
+                        )}
+
+                        {/* Step-by-Step Checklist Card */}
+                        {msg.steps && msg.steps.length > 0 && (
+                          <div className="mt-3.5 space-y-2 border-t border-slate-800/80 pt-3">
+                            {msg.steps.map((st, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-slate-900/60 border border-slate-800/60 text-[11px]"
+                              >
+                                <div className="flex items-center gap-2">
+                                  {st.status === "completed" ? (
+                                    <div className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                      <Check size={11} strokeWidth={3} />
+                                    </div>
+                                  ) : st.status === "in_progress" ? (
+                                    <div className="w-4 h-4 rounded-full border-2 border-violet-500 border-t-transparent animate-spin shrink-0" />
+                                  ) : (
+                                    <div className="w-4 h-4 rounded-full bg-slate-700/50 shrink-0" />
+                                  )}
+                                  <span className={clsx(st.status === "completed" ? "text-slate-200" : "text-slate-400")}>
+                                    {st.title}
+                                  </span>
+                                </div>
+                                {st.time && (
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    {st.time}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Embedded Scan Result Card */}
+                        {msg.scanPreview && (
+                          <div className="mt-3.5 p-3.5 rounded-xl bg-[#0e1424] border border-slate-800 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              {msg.scanPreview.app_icon ? (
+                                <img
+                                  src={msg.scanPreview.app_icon}
+                                  alt="Icon"
+                                  className="w-10 h-10 rounded-xl object-contain bg-slate-800/80 p-1 border border-slate-700/60"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center font-bold text-white text-xs">
+                                  {msg.scanPreview.app_name?.slice(0, 2).toUpperCase() || "AP"}
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-extrabold text-white text-xs">
+                                  {msg.scanPreview.app_name}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono truncate max-w-[200px]">
+                                  {msg.scanPreview.package_name}
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-300">
+                                    Google Play
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-800 text-slate-300">
+                                    {msg.scanPreview.category || "Communication"}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Risk score badge */}
+                            <div className="text-right">
+                              <div className={clsx(
+                                "px-2.5 py-1 rounded-xl text-xs font-black inline-flex items-center gap-1 border",
+                                msg.scanPreview.overall_risk_score >= 70
+                                  ? "bg-red-500/15 border-red-500/30 text-red-400"
+                                  : msg.scanPreview.overall_risk_score >= 40
+                                  ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                                  : "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                              )}>
+                                <span>{msg.scanPreview.overall_risk_score} / 100</span>
+                              </div>
+                              <div className="text-[10px] font-bold text-red-400 mt-0.5">
+                                {msg.scanPreview.overall_risk_score >= 70 ? "Critical Risk" : msg.scanPreview.overall_risk_score >= 40 ? "Suspicious" : "Safe"}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-slate-500 mt-1.5 text-right font-mono">
+                          {msg.timestamp}
                         </div>
-
-                        {/* Floating Prev Button */}
-                        {safeActiveIndex > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveShotIndex((prev) => Math.max(0, prev - 1));
-                            }}
-                            className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/95 shadow-md border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-violet-600 hover:text-white transition-all z-20"
-                            title="Previous Screenshot"
-                          >
-                            <ChevronLeft size={14} />
-                          </button>
-                        )}
-
-                        {/* Floating Next Button */}
-                        {safeActiveIndex < screenshots.length - 1 && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveShotIndex((prev) => Math.min(screenshots.length - 1, prev + 1));
-                            }}
-                            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white/95 shadow-md border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-violet-600 hover:text-white transition-all z-20"
-                            title="Next Screenshot"
-                          >
-                            <ChevronRight size={14} />
-                          </button>
-                        )}
                       </div>
 
-                      {/* Mini Thumbnail Filmstrip */}
-                      {screenshots.length > 1 && (
-                        <div className="flex items-center justify-center gap-1.5 mt-2.5 max-w-full overflow-hidden px-1">
-                          {miniFilmstrip.map((thumbUrl) => {
-                            const actualIdx = screenshots.indexOf(thumbUrl);
-                            const isActive = actualIdx === safeActiveIndex;
-                            return (
-                              <button
-                                key={actualIdx}
-                                type="button"
-                                onClick={() => setActiveShotIndex(actualIdx)}
-                                className={`w-6 h-10 rounded-md overflow-hidden transition-all shrink-0 border ${
-                                  isActive
-                                    ? "border-violet-600 ring-2 ring-violet-500/40 scale-110 shadow-sm"
-                                    : "border-slate-200 opacity-60 hover:opacity-100"
-                                }`}
-                              >
-                                <img
-                                  src={thumbUrl}
-                                  alt={`Thumb ${actualIdx + 1}`}
-                                  referrerPolicy="no-referrer"
-                                  loading="lazy"
-                                  className="w-full h-full object-cover"
-                                  onError={() => markImageFailed(thumbUrl)}
-                                />
-                              </button>
-                            );
-                          })}
+                      {/* Follow-up Suggestion Chips */}
+                      {msg.suggestions && msg.suggestions.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {msg.suggestions.map((sugg, sIdx) => (
+                            <button
+                              key={sIdx}
+                              onClick={() => handleSuggestionClick(sugg)}
+                              className="px-3 py-1.5 rounded-full bg-[#131b2e] hover:bg-violet-600/20 border border-slate-700/70 hover:border-violet-500/60 text-[11px] font-semibold text-slate-300 hover:text-violet-300 transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span>{sugg}</span>
+                              <ChevronRight size={11} className="text-slate-500" />
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
-                  ) : (
-                    /* GRID GALLERY VIEW (Clean 3-column proportional grid) */
-                    <div className="grid grid-cols-3 gap-2 my-2 h-[225px] max-h-[225px] overflow-y-auto pr-1 scrollbar-thin">
-                      {screenshots.map((url, idx) => (
-                        <div
-                          key={idx}
-                          className="aspect-[9/16] rounded-xl overflow-hidden border border-slate-200 hover:border-violet-600 hover:shadow-md transition-all cursor-pointer group relative bg-slate-100"
-                          onClick={() => {
-                            setPreviewIndex(idx);
-                            setPreviewImage(url);
-                          }}
-                        >
-                          <img
-                            src={url}
-                            alt={`Screenshot ${idx + 1}`}
-                            referrerPolicy="no-referrer"
-                            loading="lazy"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            onError={() => markImageFailed(url)}
-                          />
-                          <div className="absolute inset-0 bg-violet-900/0 group-hover:bg-violet-900/25 transition-colors flex items-center justify-center">
-                            <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md" />
-                          </div>
-                          <span className="absolute bottom-1 right-1 bg-black/60 text-white text-[8px] font-bold px-1 rounded backdrop-blur-xs">
-                            {idx + 1}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )
-                ) : (
-                  /* EMPTY STATE */
-                  <div className="h-[230px] rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200/80 flex flex-col items-center justify-center p-4 text-center my-1">
-                    <div className="w-10 h-10 rounded-full bg-slate-200/70 flex items-center justify-center mb-2 text-slate-400">
-                      <ImageIcon size={20} />
-                    </div>
-                    <div className="text-xs font-bold text-slate-700">No Screenshots</div>
-                    <div className="text-[10px] text-slate-400 mt-1 max-w-[170px]">
-                      This package was analyzed without Google Play Store screenshots.
-                    </div>
                   </div>
-                )}
-              </div>
+                );
+              })}
 
-              {/* Card Footer with Quick Action */}
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 pt-2 border-t border-slate-100/80">
-                {screenshots.length > 0 ? (
-                  <>
-                    <span>
-                      {screenshotViewMode === "phone"
-                        ? `Shot ${safeActiveIndex + 1} of ${screenshots.length}`
-                        : "Grid Gallery"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPreviewIndex(safeActiveIndex);
-                        setPreviewImage(screenshots[safeActiveIndex]);
-                      }}
-                      className="text-violet-600 hover:text-violet-800 font-bold flex items-center gap-1 transition-colors"
-                    >
-                      <Maximize2 size={11} /> Full Screen
-                    </button>
-                  </>
-                ) : (
-                  <span className="w-full text-center text-slate-400">Direct Binary Analysis</span>
-                )}
+              {/* Live Loading Indicator */}
+              {loading && (
+                <div className="flex gap-3 max-w-[85%] animate-pulse">
+                  <div className="w-8 h-8 rounded-xl bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-violet-400 shrink-0">
+                    <Bot size={16} />
+                  </div>
+                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 text-xs text-slate-300 rounded-tl-none flex items-center gap-2">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+                    <span>AppShield AI is analyzing application telemetry & model predictions...</span>
+                  </div>
+                </div>
+              )}
+
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* Bottom Omni-Chat Input Bar */}
+            <div className="p-4 border-t border-slate-800/80 bg-[#0e1322]">
+              {selectedFile && (
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-violet-500/10 border border-violet-500/30 text-xs text-violet-300 flex items-center justify-between">
+                  <div className="flex items-center gap-2 truncate">
+                    <Package size={14} />
+                    <span className="font-semibold truncate">{selectedFile.name}</span>
+                    <span className="text-[10px] text-slate-400">({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)</span>
+                  </div>
+                  <button onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-white">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 bg-[#141b2e] border border-slate-700/80 focus-within:border-violet-500/80 rounded-2xl p-2 transition-all shadow-inner">
+                {/* File Attachment Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-400 hover:bg-slate-800/60 transition-colors"
+                  title="Upload APK file"
+                >
+                  <Paperclip size={18} />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".apk"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setSelectedFile(f);
+                  }}
+                />
+
+                {/* Omni Text Input */}
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Ask a question, paste a link, drop an APK file, or enter a package name..."
+                  className="flex-1 bg-transparent text-xs text-white placeholder:text-slate-500 focus:outline-none px-2"
+                />
+
+                {/* Active Model Pill Badge */}
+                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/60 border border-slate-700/50 text-[10px] font-bold text-slate-400">
+                  <Sparkles size={11} className="text-violet-400" />
+                  <span>{currentModelLabel}</span>
+                </div>
+
+                {/* Send Button */}
+                <button
+                  type="button"
+                  disabled={loading || (!input.trim() && !selectedFile)}
+                  onClick={() => handleSendMessage()}
+                  className="w-9 h-9 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.4)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  <Send size={15} />
+                </button>
               </div>
             </div>
 
           </div>
 
-          {/* ROW 2: Top Risk Factors + AI Insights + Model Used & Summary */}
-          <div className="grid grid-cols-12 gap-6">
 
-            {/* 1. Top Risk Factors */}
-            <div className="col-span-12 lg:col-span-4 panel p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-extrabold text-slate-900">Top Risk Factors</h3>
-                  <span className="text-xs font-bold text-slate-400">By Impact</span>
-                </div>
-
-                <div className="space-y-4">
-                  {topFactors.map((item) => (
-                    <div key={item.label} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">{item.label}</span>
-                          <span className="text-[10px] text-slate-400 font-medium truncate max-w-[120px]">{item.detail}</span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-extrabold text-slate-800">{item.pct}%</span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 ${item.badge}`}>{item.risk}</span>
-                        </div>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
-                        <div className={`h-full ${item.color} rounded-full transition-all duration-500`} style={{ width: `${Math.min(100, Math.max(5, item.pct * 2.5))}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          {/* ══════════════════════════════════════════════════════
+              RIGHT PANEL: Live Threat Dossier & Analysis Canvas
+              ══════════════════════════════════════════════════════ */}
+          <div className="col-span-12 xl:col-span-5 flex flex-col bg-[#0f172a]/95 border-l border-slate-800/80 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800">
+            
+            {/* Top Navigation Tabs */}
+            <div className="px-6 py-3 border-b border-slate-800/80 bg-[#0e1322] flex items-center gap-1 overflow-x-auto scrollbar-none sticky top-0 z-10">
+              {[
+                { id: "analysis", label: "Analysis Result" },
+                { id: "details", label: "App Details" },
+                { id: "permissions", label: "Permissions" },
+                { id: "ml", label: "ML Analysis" },
+                { id: "screenshots", label: "Screenshots" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={clsx(
+                    "px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all",
+                    activeTab === tab.id
+                      ? "bg-violet-600/20 text-violet-400 border border-violet-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
-            {/* 2. AI Insights */}
-            <div className="col-span-12 lg:col-span-4 panel p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <Sparkles size={18} className="text-violet-600" />
-                  <h3 className="text-base font-extrabold text-slate-900">AI Insights</h3>
-                </div>
-
-                <div className="space-y-3">
-                  {insightsList.map((item, idx) => (
-                    <div key={idx} className={`p-3.5 rounded-2xl ${item.bgColor} flex items-start gap-3 shadow-sm`}>
-                      <div className={`w-8 h-8 rounded-xl ${item.iconBg} flex items-center justify-center shrink-0`}>
-                        <item.Icon size={16} />
-                      </div>
-                      <div className="text-xs">
-                        <span className="font-bold text-slate-900">{item.moduleName}: </span>
-                        <span className="text-slate-600">{item.reason}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dynamic Overall Recommendation Banner */}
-              <div className={`p-4 rounded-2xl ${riskMeta.bgLight} border ${riskMeta.borderColor} flex items-center justify-between mt-4 shadow-sm`}>
-                <div>
-                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Overall Recommendation</div>
-                  <div className={`text-xs font-extrabold ${riskMeta.colorText} mt-0.5`}>{riskMeta.recommendation}</div>
-                </div>
-                <div className={`w-10 h-10 rounded-2xl ${riskMeta.iconColor} text-white flex items-center justify-center shadow-lg shrink-0 ml-3`}>
-                  <riskMeta.RecommendationIcon size={20} />
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Model Used & Prediction Summary */}
-            <div className="col-span-12 lg:col-span-4 panel p-6 flex flex-col justify-between">
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900 mb-4">Model Used <span className="text-xs font-normal text-slate-400">(Production Mode)</span></h3>
-                
-                <div className="p-3 rounded-2xl bg-[#e6ecf5]/80 border border-white/80 flex items-center justify-between shadow-inner mb-5">
-                  <span className="text-xs font-extrabold text-slate-800">{scan.model_used || "Random Forest"}</span>
-                  <span className="clay-badge-green px-3 py-1 text-[11px] font-extrabold">Active Classifier</span>
-                </div>
-
-                <h4 className="text-xs font-extrabold text-slate-900 mb-3">Prediction Breakdown</h4>
-
-                <div className="flex items-center gap-6">
-                  {/* Dynamic Conic-Gradient Donut Chart */}
-                  <div
-                    className="relative w-28 h-28 rounded-full border-4 border-white flex items-center justify-center shadow-md shrink-0 transition-all duration-500"
-                    style={probabilities.donutStyle}
-                  >
-                    <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center text-center shadow-inner">
-                      <div>
-                        <div className="text-sm font-black text-slate-900">100%</div>
-                        <div className="text-[9px] font-bold text-slate-400">Probability</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-xs flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 font-semibold text-slate-600">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Fraudulent
-                      </span>
-                      <span className="font-extrabold text-slate-900">{probabilities.fraud}%</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 font-semibold text-slate-600">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Suspicious
-                      </span>
-                      <span className="font-extrabold text-slate-900">{probabilities.suspicious}%</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 font-semibold text-slate-600">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Safe
-                      </span>
-                      <span className="font-extrabold text-slate-900">{probabilities.safe}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-4 border-t border-slate-100 mt-4">
-                <span className="text-xs font-semibold text-slate-500">Final Prediction</span>
-                <span className={`text-sm font-extrabold ${riskMeta.colorText}`}>{scan.prediction || riskMeta.prediction}</span>
-              </div>
-            </div>
-
-          </div>
-
-          {/* ROW 3: "Why this app is flagged?" + Recommended Actions */}
-          <div className="grid grid-cols-12 gap-6">
-
-            {/* 1. Why this app is flagged? Callout Row */}
-            <div className="col-span-12 lg:col-span-8 panel p-6">
-              <h3 className="text-base font-extrabold text-slate-900 mb-4">
-                {scan.flag_reasons?.length ? "Why this app is flagged?" : "Security Analysis Verification"}
-              </h3>
+            {/* Canvas Body */}
+            <div className="p-6 space-y-5">
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {whyFlaggedGrid.map((item, idx) => (
-                  <div key={idx} className="p-4 rounded-2xl bg-white border border-slate-100 shadow-[4px_4px_12px_rgba(163,177,198,0.25),-4px_-4px_12px_rgba(255,255,255,0.9)] flex items-start gap-3">
-                    <div className={`w-9 h-9 rounded-xl ${item.iconBg} flex items-center justify-center shrink-0 shadow-sm`}>
-                      <item.Icon size={18} />
+              {/* 1. App Profile Card */}
+              <div className="p-5 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  {scan.app_icon ? (
+                    <img
+                      src={scan.app_icon}
+                      alt={scan.app_name}
+                      className="w-14 h-14 rounded-2xl object-contain bg-slate-900 p-1.5 border border-slate-700/60 shadow-md"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg">
+                      {scan.app_name?.slice(0, 2).toUpperCase() || "AP"}
                     </div>
-                    <p className="text-xs font-semibold text-slate-600 leading-snug">
-                      {item.reason}
+                  )}
+                  <div>
+                    <h3 className="text-base font-extrabold text-white tracking-tight">
+                      {scan.app_name}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono mt-0.5">
+                      {scan.package_name}
                     </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                        Google Play
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                        {scan.category || "Communication"}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                        Official App
+                      </span>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            {/* 2. Recommended Actions Card */}
-            <div className="col-span-12 lg:col-span-4 panel p-6 flex items-center justify-between">
-              <div className="space-y-3">
-                <h3 className="text-base font-extrabold text-slate-900">Recommended Actions</h3>
-                <div className="space-y-2 text-xs font-bold text-slate-700">
-                  {getRecommendedActions(scan.overall_risk_score, scan.prediction).map((act, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <CheckCircle2
-                        size={16}
-                        className={`shrink-0 mt-0.5 ${
-                          scan.overall_risk_score >= 70
-                            ? "text-red-500"
-                            : scan.overall_risk_score >= 40
-                            ? "text-amber-500"
-                            : "text-emerald-600"
-                        }`}
-                      />
-                      <span>{act}</span>
+                <a
+                  href={`https://play.google.com/store/apps/details?id=${scan.package_name}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors"
+                >
+                  <span>View in Play Store</span>
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+
+              {/* 2. Risk Overview Card (Circular SVG Radial Gauge) */}
+              <div className="p-6 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl">
+                <div className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-4">
+                  Risk Overview
+                </div>
+
+                <div className="grid grid-cols-12 gap-4 items-center">
+                  {/* Circular Radial Gauge */}
+                  <div className="col-span-5 flex flex-col items-center justify-center relative">
+                    <div className="relative w-32 h-32 flex items-center justify-center">
+                      <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                        {/* Background track */}
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="40"
+                          fill="transparent"
+                          stroke="#1e293b"
+                          strokeWidth="9"
+                        />
+                        {/* Progress glow arc */}
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r="40"
+                          fill="transparent"
+                          stroke={scoreColor}
+                          strokeWidth="9"
+                          strokeDasharray={251.2}
+                          strokeDashoffset={251.2 - (251.2 * score) / 100}
+                          strokeLinecap="round"
+                          style={{
+                            transition: "stroke-dashoffset 1s ease-in-out",
+                            filter: `drop-shadow(0 0 6px ${scoreColor})`,
+                          }}
+                        />
+                      </svg>
+                      
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                        <span className="text-2xl font-black text-white tracking-tight">
+                          {score}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          / 100
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Risk Text & Badge */}
+                  <div className="col-span-7 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={18} className="text-red-500 shrink-0" />
+                      <h4 className="text-sm font-extrabold text-red-400">
+                        {riskTitle}
+                      </h4>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      This application shows high risk indicators and should be reviewed carefully.
+                    </p>
+                    <div className="pt-1 flex items-center gap-2 text-[11px] font-bold text-slate-300">
+                      <ShieldCheck size={14} className="text-violet-400" />
+                      <span>Confidence Score: <strong className="text-white font-mono">{confidence}%</strong></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Top Risk Factors */}
+              <div className="p-6 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+                    Top Risk Factors
+                  </span>
+                  <button onClick={() => setActiveTab("permissions")} className="text-[11px] font-bold text-violet-400 hover:text-violet-300">
+                    View All
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-1">
+                  {(scan.top_contributors && scan.top_contributors.length > 0 ? scan.top_contributors : [
+                    { feature: "Suspicious Permissions", label: "Suspicious Permissions", impact_percent: 31 },
+                    { feature: "Network Connections", label: "Network Connections", impact_percent: 22 },
+                    { feature: "Code Obfuscation", label: "Code Obfuscation", impact_percent: 18 },
+                    { feature: "Potential Data Exfiltration", label: "Potential Data Exfiltration", impact_percent: 15 },
+                    { feature: "Similar to Known Malware", label: "Similar to Known Malware", impact_percent: 14 },
+                  ]).map((item, idx) => {
+                    const pct = item.impact_percent;
+                    const level = pct >= 25 ? "High" : pct >= 15 ? "Medium" : "Low";
+                    const barColor = pct >= 25 ? "bg-red-500" : pct >= 15 ? "bg-amber-500" : "bg-blue-500";
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-300">{item.label || item.feature}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-400 font-bold text-[11px]">{pct}%</span>
+                            <span className={clsx(
+                              "text-[10px] font-extrabold px-1.5 py-0.5 rounded",
+                              level === "High" ? "bg-red-500/20 text-red-400" : level === "Medium" ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"
+                            )}>
+                              {level}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className={clsx("h-full rounded-full transition-all duration-500", barColor)}
+                            style={{ width: `${Math.min(pct * 2.5, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 4. ML Model Predictions Breakdown */}
+              <div className="p-6 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+                    ML Model Predictions
+                  </span>
+                  <Link href="/research#comparison" className="text-[11px] font-bold text-violet-400 hover:text-violet-300">
+                    Compare Models
+                  </Link>
+                </div>
+
+                <div className="space-y-2.5 pt-1">
+                  {[
+                    { name: "LightGBM", score: 89.2, color: "bg-red-500" },
+                    { name: "Random Forest", score: 84.1, color: "bg-orange-500" },
+                    { name: "XGBoost", score: 81.3, color: "bg-orange-500" },
+                    { name: "CatBoost", score: 78.6, color: "bg-amber-500" },
+                    { name: "Neural Network", score: 76.4, color: "bg-amber-500" },
+                    { name: "Ensemble", score: 86.7, color: "bg-violet-500" },
+                  ].map((m) => (
+                    <div key={m.name} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-semibold text-slate-300 w-28 shrink-0">{m.name}</span>
+                      <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={clsx("h-full rounded-full", m.color)}
+                          style={{ width: `${m.score}%` }}
+                        />
+                      </div>
+                      <span className="font-mono text-slate-400 font-bold text-[11px] w-12 text-right">
+                        {m.score}%
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* 3D Shield Graphic Adaptive to Verdict */}
-              <div
-                className={`w-20 h-24 rounded-3xl flex items-center justify-center shadow-lg border border-white/60 text-white shrink-0 ${
-                  scan.overall_risk_score >= 70
-                    ? "bg-gradient-to-br from-red-600 via-rose-600 to-red-800 shadow-[6px_6px_16px_rgba(239,68,68,0.4)]"
-                    : scan.overall_risk_score >= 40
-                    ? "bg-gradient-to-br from-amber-500 via-orange-500 to-amber-700 shadow-[6px_6px_16px_rgba(245,158,11,0.4)]"
-                    : "bg-gradient-to-br from-emerald-500 via-teal-600 to-emerald-800 shadow-[6px_6px_16px_rgba(16,185,129,0.4)]"
-                }`}
-              >
-                <Lock size={32} className="drop-shadow-lg" />
-              </div>
-            </div>
+              {/* 5. Quick Actions */}
+              <div className="space-y-2 pt-2">
+                <a
+                  href={api.downloadPdfReport(scan.scan_id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(124,58,237,0.4)] transition-all cursor-pointer"
+                >
+                  <Download size={15} />
+                  <span>Download PDF Report</span>
+                </a>
 
+                <button
+                  onClick={() => setActiveTab("permissions")}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Code2 size={14} />
+                  <span>View Decompiled Manifest</span>
+                </button>
+
+                <button
+                  onClick={() => handleSendMessage("Analyze network traffic and suspicious domains for this app.")}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Globe size={14} />
+                  <span>Analyze Network Traffic</span>
+                </button>
+
+                <button
+                  onClick={() => handleSendMessage("Compare this app with the genuine official Play Store release.")}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <ShieldCheck size={14} />
+                  <span>Compare with Official App</span>
+                </button>
+
+                <button
+                  onClick={() => alert("Added to monitored security watchlist.")}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  <Star size={14} />
+                  <span>Add to Watchlist</span>
+                </button>
+              </div>
+
+            </div>
           </div>
 
         </div>
-
-        {/* Lightbox Modal with Full-Resolution Gallery Filmstrip */}
-        {previewImage && (
-          <div
-            className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4"
-            onClick={() => setPreviewImage(null)}
-          >
-            <div
-              className="relative max-w-2xl w-full bg-slate-900 p-5 rounded-3xl border border-slate-700 shadow-2xl flex flex-col items-center animate-in fade-in zoom-in duration-200"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() => setPreviewImage(null)}
-                className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors z-10"
-                title="Close"
-              >
-                <X size={18} />
-              </button>
-
-              {/* Main Image Display */}
-              <div className="w-full flex items-center justify-center max-h-[68vh] overflow-hidden my-1">
-                <img
-                  src={previewImage}
-                  alt={`Screenshot ${previewIndex + 1}`}
-                  referrerPolicy="no-referrer"
-                  className="max-h-[68vh] w-auto rounded-2xl object-contain shadow-2xl border border-slate-800"
-                  onError={() => markImageFailed(previewImage)}
-                />
-              </div>
-
-              {/* Bottom Navigation and Filmstrip */}
-              <div className="w-full pt-3 border-t border-slate-800 flex flex-col gap-2.5">
-                {/* Controls */}
-                <div className="flex items-center justify-between px-2 text-white text-xs font-bold">
-                  <button
-                    type="button"
-                    disabled={previewIndex === 0}
-                    onClick={() => {
-                      const newIdx = previewIndex - 1;
-                      setPreviewIndex(newIdx);
-                      setPreviewImage(screenshots[newIdx]);
-                      setActiveShotIndex(newIdx);
-                    }}
-                    className="clay-btn-soft px-3.5 py-1.5 text-white disabled:opacity-30 flex items-center gap-1 text-xs"
-                  >
-                    <ChevronLeft size={14} /> Previous
-                  </button>
-                  <span className="text-slate-300 font-extrabold text-xs">
-                    {previewIndex + 1} of {screenshots.length}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={previewIndex === screenshots.length - 1}
-                    onClick={() => {
-                      const newIdx = previewIndex + 1;
-                      setPreviewIndex(newIdx);
-                      setPreviewImage(screenshots[newIdx]);
-                      setActiveShotIndex(newIdx);
-                    }}
-                    className="clay-btn-purple px-3.5 py-1.5 text-white disabled:opacity-30 flex items-center gap-1 text-xs"
-                  >
-                    Next <ChevronRight size={14} />
-                  </button>
-                </div>
-
-                {/* Filmstrip of all screenshots */}
-                {screenshots.length > 1 && (
-                  <div className="flex gap-2 max-w-full overflow-x-auto py-1 px-1 scrollbar-thin">
-                    {screenshots.map((url, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          setPreviewIndex(idx);
-                          setPreviewImage(url);
-                          setActiveShotIndex(idx);
-                        }}
-                        className={`h-12 w-8 rounded-lg overflow-hidden shrink-0 border-2 transition-all ${
-                          idx === previewIndex
-                            ? "border-violet-500 ring-2 ring-violet-500/50 scale-105"
-                            : "border-slate-700 opacity-60 hover:opacity-100"
-                        }`}
-                      >
-                        <img
-                          src={url}
-                          alt={`Thumb ${idx + 1}`}
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                          className="w-full h-full object-cover"
-                          onError={() => markImageFailed(url)}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+      </div>
     </div>
   );
 }

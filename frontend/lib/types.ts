@@ -25,7 +25,8 @@ export interface ScanResult {
   prediction: Prediction;
   confidence: number;
   model_used: string;
-  module_scores: Record<string, ModuleScore>;
+  module_scores?: Record<string, ModuleScore>;
+  permissions?: string[];
   top_contributors: { feature: string; label: string; impact_percent: number }[];
   flag_reasons: { module: string; reason: string; level: string; score: number }[];
   class_probabilities?: { Safe?: number; Suspicious?: number; Fraudulent?: number } & Record<string, number>;

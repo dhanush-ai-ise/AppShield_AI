@@ -266,4 +266,15 @@ export const api = {
     if (!res.ok) throw new Error("Failed to generate batch PDF report.");
     return res.blob();
   },
+
+  copilotStatus: () => request("/api/copilot/status"),
+
+  copilotChat: (prompt: string, currentScanId?: string, modelName?: string, file?: File) => {
+    const form = new FormData();
+    if (prompt) form.append("prompt", prompt);
+    if (currentScanId) form.append("current_scan_id", currentScanId);
+    if (modelName) form.append("model_name", modelName);
+    if (file) form.append("file", file);
+    return request("/api/copilot/chat", { method: "POST", body: form }, 600000);
+  },
 };

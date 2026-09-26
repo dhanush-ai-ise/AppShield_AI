@@ -18,7 +18,6 @@ const NAV_SECTIONS = [
     label: SIDEBAR.navSections.main,
     items: [
       { href: "/dashboard", label: SIDEBAR.navItems.dashboard, icon: LayoutDashboard },
-      { href: "/new-scan", label: SIDEBAR.navItems.newScan, icon: ScanLine },
       { href: "/scan-history", label: SIDEBAR.navItems.scanHistory, icon: History },
       { href: "/batch-scan", label: SIDEBAR.navItems.batchScan, icon: Layers },
     ],
@@ -111,20 +110,30 @@ export default function Sidebar() {
     fetchData();
   }, []);
 
+  const isDark = pathname === "/dashboard" || pathname === "/";
+
   return (
     <aside className={clsx(
-      "shrink-0 h-screen sticky top-0 flex flex-col bg-[#f0f3f9] border-r border-slate-200/80 transition-all duration-300 z-30",
+      "shrink-0 h-screen sticky top-0 flex flex-col transition-all duration-300 z-30",
+      isDark ? "bg-[#0c101d] border-r border-slate-800/80 text-white" : "bg-[#f0f3f9] border-r border-slate-200/80 text-slate-800",
       collapsed ? "w-20" : "w-64"
     )}>
       {/* Brand Header */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-200/60">
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 flex items-center justify-center shadow-[4px_4px_10px_rgba(124,58,237,0.3),-3px_-3px_8px_rgba(255,255,255,0.8)] border border-white/60">
+      <div className={clsx(
+        "flex items-center gap-3 px-5 py-5 border-b",
+        isDark ? "border-slate-800/80" : "border-slate-200/60"
+      )}>
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.4)] border border-white/20">
           <ShieldCheck size={22} className="text-white drop-shadow" />
         </div>
         {!collapsed && (
           <div>
-            <div className="text-base font-extrabold text-slate-900 leading-tight tracking-tight">AppShield <span className="text-violet-600">AI</span></div>
-            <div className="text-[11px] font-medium text-slate-500 leading-tight">AI Fraud Detection Platform</div>
+            <div className={clsx("text-base font-extrabold leading-tight tracking-tight", isDark ? "text-white" : "text-slate-900")}>
+              AppShield <span className="text-violet-500">AI</span>
+            </div>
+            <div className={clsx("text-[11px] font-medium leading-tight", isDark ? "text-slate-400" : "text-slate-500")}>
+              AI Fraud Detection Platform
+            </div>
           </div>
         )}
       </div>
@@ -134,7 +143,7 @@ export default function Sidebar() {
         {NAV_SECTIONS.map((section) => (
           <div key={section.label}>
             {!collapsed && (
-              <div className="px-2 mb-2.5 text-[10px] font-extrabold tracking-wider text-slate-400 uppercase">
+              <div className={clsx("px-2 mb-2.5 text-[10px] font-extrabold tracking-wider uppercase", isDark ? "text-slate-500" : "text-slate-400")}>
                 {section.label}
               </div>
             )}
@@ -149,13 +158,17 @@ export default function Sidebar() {
                     className={clsx(
                       "flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200",
                       active
-                        ? "clay-inset-active text-violet-700"
+                        ? isDark
+                          ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.4)]"
+                          : "clay-inset-active text-violet-700"
+                        : isDark
+                        ? "text-slate-400 hover:text-white hover:bg-slate-800/60"
                         : "text-slate-600 hover:text-slate-900 hover:bg-white/80 hover:shadow-[4px_4px_10px_rgba(163,177,198,0.25),-4px_-4px_10px_rgba(255,255,255,0.9)]",
                       collapsed && "justify-center px-0"
                     )}
                     title={item.label}
                   >
-                    <Icon size={17} className={active ? "text-violet-600 drop-shadow-sm" : "text-slate-400"} />
+                    <Icon size={17} className={active ? "text-white" : isDark ? "text-slate-400" : "text-slate-400"} />
                     {!collapsed && <span>{item.label}</span>}
                   </Link>
                 );
@@ -166,40 +179,48 @@ export default function Sidebar() {
       </nav>
 
       {/* System Status Card */}
-      <div className="p-4 border-t border-slate-200/60 space-y-3">
+      <div className={clsx("p-4 border-t space-y-3", isDark ? "border-slate-800/80" : "border-slate-200/60")}>
         {!collapsed && (
-          <div className="panel p-4">
-            <div className="text-[10px] font-extrabold tracking-wider text-slate-400 uppercase mb-2">
+          <div className={clsx("p-4 rounded-2xl", isDark ? "bg-[#131b2e] border border-slate-800 shadow-xl" : "panel")}>
+            <div className={clsx("text-[10px] font-extrabold tracking-wider uppercase mb-2", isDark ? "text-slate-400" : "text-slate-400")}>
               System Status
             </div>
             
-            <div className="clay-badge-green flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold mb-3">
+            <div className={clsx(
+              "flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold mb-3 rounded-xl border",
+              isDark
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                : "clay-badge-green"
+            )}>
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               All Systems Operational
             </div>
 
-            <div className="clay-inset p-3 space-y-2 text-[11px]">
-              <div className="flex justify-between items-center text-slate-500">
+            <div className={clsx("p-3 space-y-2 text-[11px] rounded-xl", isDark ? "bg-[#0e1424] border border-slate-800/80" : "clay-inset")}>
+              <div className="flex justify-between items-center text-slate-400">
                 <span className="font-medium">Scans Today</span>
-                <span className="font-extrabold text-slate-900">{systemStatus.scansToday}</span>
+                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.scansToday}</span>
               </div>
-              <div className="flex justify-between items-center text-slate-500">
+              <div className="flex justify-between items-center text-slate-400">
                 <span className="font-medium">Models Trained</span>
-                <span className="font-extrabold text-slate-900">{systemStatus.modelsTrained}</span>
+                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.modelsTrained}</span>
               </div>
-              <div className="flex justify-between items-center text-slate-500">
+              <div className="flex justify-between items-center text-slate-400">
                 <span className="font-medium">Avg. Accuracy</span>
-                <span className="font-extrabold text-slate-900">{systemStatus.avgAccuracy}%</span>
+                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.avgAccuracy}%</span>
               </div>
-              <div className="flex justify-between items-center text-slate-500">
+              <div className="flex justify-between items-center text-slate-400">
                 <span className="font-medium">Last Training</span>
-                <span className="font-extrabold text-slate-900">{systemStatus.lastTraining}</span>
+                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.lastTraining}</span>
               </div>
             </div>
           </div>
         )}
         <button 
-          className="clay-btn-soft flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-slate-900 w-full justify-center py-2"
+          className={clsx(
+            "flex items-center gap-2 text-xs font-bold w-full justify-center py-2 rounded-xl transition-colors",
+            isDark ? "bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/60" : "clay-btn-soft text-slate-600 hover:text-slate-900"
+          )}
           onClick={() => setCollapsed(!collapsed)}
         >
           {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}

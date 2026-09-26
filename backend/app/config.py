@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     )
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+    # --- AI Copilot / LLM ---
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
     # --- Risk thresholds (overall 0-100 score) ---
     RISK_SAFE_MAX: int = 39
     RISK_SUSPICIOUS_MAX: int = 69

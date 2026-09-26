@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db.postgres import Base, engine
-from app.routers import auth, datasets_router, models_router, reports_router, scan
+from app.routers import auth, datasets_router, models_router, reports_router, scan, copilot_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -27,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(copilot_router.router)
 app.include_router(scan.router)
 app.include_router(auth.router)
 app.include_router(models_router.router)
