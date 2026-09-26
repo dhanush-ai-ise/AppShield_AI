@@ -2,6 +2,7 @@
 Core scan router — implements the full pipeline:
 Input -> Feature Collection -> Modules -> Fusion -> ML Classification -> XAI -> Response
 """
+import asyncio
 import base64
 import json
 import uuid
@@ -672,8 +673,8 @@ async def scan_apk_url(
 
     apk_path = None
     try:
-        # Download APK with real-time progress callbacks
-        apk_path = download_apk(url, progress_callback=_on_progress)
+        # Run download in a worker thread so the FastAPI event loop remains 100% responsive for progress polling
+        apk_path = await asyncio.to_thread(download_apk, url, _on_progress)
         if tracker_id:
             last_down = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("downloaded_mb", 0.0)
             total_mb = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("total_mb") or last_down
@@ -682,7 +683,7 @@ async def scan_apk_url(
                 "percent": 100,
                 "downloaded_mb": last_down,
                 "total_mb": total_mb,
-                "message": f"Downloaded ({last_down} MB) • Analyzing Security Features...",
+                "message": f"Downloaded ({last_down} MB) • Decompiling & Analyzing Security Features...",
             }
     except Exception as exc:
         if tracker_id:
@@ -695,29 +696,32 @@ async def scan_apk_url(
         raise HTTPException(status_code=400, detail=f"Failed to download APK: {str(exc)}") from exc
         
     try:
-        apk_sha256 = sha256_of_file(apk_path)
-        # Parse APK with Androguard
-        manifest_data = parse_apk_with_androguard(apk_path)
-        icon_bytes = manifest_data.get("icon_bytes")
-        
-        collected = {
-            "input_type": "apk_url",
-            "package_name": manifest_data.get("package_name"),
-            "app_name": manifest_data.get("app_name") or manifest_data.get("package_name"),
-            "permissions": manifest_data.get("permissions", []),
-            "reviews": [],
-            "developer_info": {},
-            "metadata": {
-                "min_sdk": manifest_data.get("min_sdk"),
-                "target_sdk": manifest_data.get("target_sdk"),
-            },
-            "manifest_data": manifest_data,
-            "cert_info": manifest_data.get("cert_info", {}),
-            "icon_bytes": icon_bytes,
-            "app_icon": _image_data_url(icon_bytes),
-            "apk_sha256": apk_sha256,
-        }
-        res = run_pipeline(collected, model_name, current_user)
+        def _process_analysis():
+            apk_sha256 = sha256_of_file(apk_path)
+            # Parse APK with Androguard
+            manifest_data = parse_apk_with_androguard(apk_path)
+            icon_bytes = manifest_data.get("icon_bytes")
+            
+            collected = {
+                "input_type": "apk_url",
+                "package_name": manifest_data.get("package_name"),
+                "app_name": manifest_data.get("app_name") or manifest_data.get("package_name"),
+                "permissions": manifest_data.get("permissions", []),
+                "reviews": [],
+                "developer_info": {},
+                "metadata": {
+                    "min_sdk": manifest_data.get("min_sdk"),
+                    "target_sdk": manifest_data.get("target_sdk"),
+                },
+                "manifest_data": manifest_data,
+                "cert_info": manifest_data.get("cert_info", {}),
+                "icon_bytes": icon_bytes,
+                "app_icon": _image_data_url(icon_bytes),
+                "apk_sha256": apk_sha256,
+            }
+            return run_pipeline(collected, model_name, current_user)
+
+        res = await asyncio.to_thread(_process_analysis)
         if tracker_id:
             _APK_DOWNLOAD_PROGRESS[tracker_id] = {
                 "status": "completed",

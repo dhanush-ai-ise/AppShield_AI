@@ -130,10 +130,15 @@ export default function NewScanPage() {
           status: "connecting",
         });
 
+        let elapsed = 0;
         pollTimer = setInterval(async () => {
+          elapsed += 0.5;
           try {
             const prog = await api.getApkDownloadProgress(trackerId);
             if (prog && prog.message) {
+              if (prog.status === "error") {
+                setError(prog.message);
+              }
               setDownloadProgress({
                 percent: prog.percent ?? 0,
                 message: prog.message,
@@ -141,9 +146,15 @@ export default function NewScanPage() {
                 totalMb: prog.total_mb,
                 status: prog.status,
               });
+            } else if (elapsed > 2) {
+              setDownloadProgress((prev) => ({
+                percent: prev?.percent || 5,
+                message: `Negotiating download stream (${Math.round(elapsed)}s)...`,
+                status: "connecting",
+              }));
             }
           } catch {}
-        }, 350);
+        }, 500);
 
         result = await api.scanApkUrl(value, selectedModel, trackerId);
       }

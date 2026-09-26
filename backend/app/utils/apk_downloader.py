@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 MAX_APK_SIZE_BYTES = getattr(settings, "MAX_APK_SIZE_BYTES", 500 * 1024 * 1024)  # 500 MB max
 MAX_DOWNLOAD_SECONDS = getattr(settings, "MAX_DOWNLOAD_SECONDS", 300)  # 5 minutes
-CHUNK_SIZE = 256 * 1024  # 256 KB chunks
+CHUNK_SIZE = 512 * 1024  # 512 KB chunks for fast streaming
 
 
 def _stream_to_file(
@@ -61,6 +61,8 @@ def _stream_to_file(
 
     total_bytes = 0
     first_chunk = True
+    last_callback_time = 0.0
+
     with open(dest, "wb") as f:
         for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
             if time.time() > deadline:
@@ -82,11 +84,19 @@ def _stream_to_file(
                 if total_bytes > MAX_APK_SIZE_BYTES:
                     raise ValueError(f"APK download exceeded maximum {max_mb}MB limit.")
                 f.write(chunk)
-                if progress_callback:
+                now = time.time()
+                if progress_callback and (now - last_callback_time >= 0.15 or total_bytes == len(chunk)):
+                    last_callback_time = now
                     try:
                         progress_callback(total_bytes, cl)
                     except Exception:
                         pass
+
+    if progress_callback:
+        try:
+            progress_callback(total_bytes, cl or total_bytes)
+        except Exception:
+            pass
 
 
 def download_apk(
@@ -96,9 +106,12 @@ def download_apk(
     dest = settings.TEMP_APK_DIR / f"{uuid.uuid4().hex}.apk"
     session = requests.Session()
     
+    # 1 retry with fast backoff to prevent hanging on unreachable hosts
     retries = Retry(
-        total=2,
-        backoff_factor=0.3,
+        total=1,
+        connect=1,
+        read=1,
+        backoff_factor=0.2,
         status_forcelist=[500, 502, 503, 504],
         allowed_methods=["GET"],
     )
@@ -106,21 +119,30 @@ def download_apk(
     session.mount("https://", HTTPAdapter(max_retries=retries))
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
     }
     
     deadline = time.time() + MAX_DOWNLOAD_SECONDS
 
+    # Initial notification
+    if progress_callback:
+        try:
+            progress_callback(0, None)
+        except Exception:
+            pass
+
     try:
         try:
-            with session.get(url, stream=True, timeout=(10, 30), headers=headers, verify=True, allow_redirects=True) as r:
+            with session.get(url, stream=True, timeout=(25, 60), headers=headers, verify=True, allow_redirects=True) as r:
                 r.raise_for_status()
                 _stream_to_file(r, dest, deadline, progress_callback)
             return dest
-        except requests.exceptions.SSLError:
+        except (requests.exceptions.SSLError, requests.exceptions.CertificateError):
             logger.warning(f"SSL verification failed for {url}, retrying without verification")
-            with session.get(url, stream=True, timeout=(10, 30), headers=headers, verify=False, allow_redirects=True) as r:
+            with session.get(url, stream=True, timeout=(25, 60), headers=headers, verify=False, allow_redirects=True) as r:
                 r.raise_for_status()
                 _stream_to_file(r, dest, deadline, progress_callback)
             return dest

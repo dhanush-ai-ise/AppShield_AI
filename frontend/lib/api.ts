@@ -203,17 +203,17 @@ export const api = {
     form.append("url", url);
     if (modelName) form.append("model_name", modelName);
     if (trackerId) form.append("tracker_id", trackerId);
-    return request("/api/scan/apk-url", { method: "POST", body: form });
+    return request("/api/scan/apk-url", { method: "POST", body: form }, 600000);
   },
 
   getApkDownloadProgress: (trackerId: string) =>
-    request(`/api/scan/apk-download-progress/${encodeURIComponent(trackerId)}`),
+    request(`/api/scan/apk-download-progress/${encodeURIComponent(trackerId)}`, {}, 15000),
 
   scanApkUpload: (file: File, modelName?: string) => {
     const form = new FormData();
     form.append("file", file);
     if (modelName) form.append("model_name", modelName);
-    return request("/api/scan/apk-upload", { method: "POST", body: form });
+    return request("/api/scan/apk-upload", { method: "POST", body: form }, 600000);
   },
 
   scanByHash: (sha256: string, modelName?: string) => {
