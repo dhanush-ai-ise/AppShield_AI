@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # --- AI Copilot / LLM ---
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
     # --- Risk thresholds (overall 0-100 score) ---
     RISK_SAFE_MAX: int = 39

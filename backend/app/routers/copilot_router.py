@@ -1,11 +1,12 @@
 """
 AI Security Copilot Router — powers the conversational threat analysis command center.
-Supports Google Gemini with graceful fallback to built-in rule-based Security Analyst.
+Supports Google Gemini with resilient model auto-resolution and graceful fallback.
 """
 import os
 import re
 import json
 import time
+import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -20,24 +21,65 @@ from app.db.mongo import scans_collection
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/copilot", tags=["copilot"])
 
-# Check if Gemini is configured
-_gemini_client = None
-if settings.GEMINI_API_KEY:
+_gemini_model_instance = None
+_configured_gemini = False
+
+def get_gemini_client(requested_model: Optional[str] = None):
+    """
+    Returns an active Gemini GenerativeModel instance with fallback across supported models.
+    """
+    global _gemini_model_instance, _configured_gemini
+    
+    api_key = settings.GEMINI_API_KEY
+    if not api_key:
+        return None
+        
     try:
         import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        _gemini_client = genai.GenerativeModel(settings.GEMINI_MODEL or "gemini-1.5-flash")
-        logger.info(f"Gemini AI Copilot initialized with model {settings.GEMINI_MODEL}")
+        if not _configured_gemini:
+            genai.configure(api_key=api_key)
+            _configured_gemini = True
+            
+        # Target model candidates in priority order
+        candidates = []
+        if requested_model and requested_model not in ["appshield-local", "default"]:
+            candidates.append(requested_model)
+            # Map legacy 1.5 names to current 3.8 / 2.5 models
+            if "1.5" in requested_model:
+                candidates.append("gemini-3.8-flash")
+                
+        if settings.GEMINI_MODEL:
+            candidates.append(settings.GEMINI_MODEL)
+            if "1.5" in settings.GEMINI_MODEL:
+                candidates.append("gemini-3.8-flash")
+                
+        candidates.extend(["gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"])
+        
+        # Deduplicate while preserving order
+        seen = set()
+        dedup_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+        
+        for cand in dedup_candidates:
+            try:
+                model = genai.GenerativeModel(cand)
+                return model
+            except Exception as e:
+                logger.debug(f"Candidate {cand} not available: {e}")
+                continue
+                
+        return None
     except Exception as e:
-        logger.warning(f"Could not initialize Gemini: {e}")
-        _gemini_client = None
+        logger.warning(f"Could not initialize Google Gemini: {e}")
+        return None
 
 
-SYSTEM_PROMPT = """You are AppShield AI Copilot, an elite cybersecurity and Android application threat intelligence assistant.
-Your goal is to help users scan, analyze, and understand Android application security risks, fraudulent behaviors, permission abuse, and malware patterns.
-Provide direct, concise, and highly professional security guidance.
-Format your responses with clear markdown, bullet points, and security severity ratings where relevant.
-When discussing risk scores: 0-39 is Low/Safe, 40-69 is Moderate/Suspicious, 70-100 is High/Critical Risk.
+SYSTEM_PROMPT = """You are AppShield AI Copilot, an elite cybersecurity analyst and Android threat intelligence assistant.
+Your goal is to help users scan, analyze, and understand Android security risks, fraudulent behaviors, permission abuse, and malware patterns.
+Guidelines:
+1. Provide direct, informative, professional security guidance.
+2. If the user asks about specific apps, permissions, malicious behaviors, or general technical questions, answer thoroughly and clearly using clean markdown.
+3. If app telemetry context is provided below, incorporate those specific metrics into your explanation.
+4. If no specific app is being analyzed, answer the user's question directly with actionable cybersecurity insights.
 """
 
 
@@ -68,7 +110,7 @@ def _detect_intent(prompt: str) -> Dict[str, Any]:
 
 
 def _local_security_answer(prompt: str, current_scan: Optional[dict] = None) -> str:
-    """Intelligent fallback security analyst when external LLM API is not configured."""
+    """Intelligent fallback security analyst when external LLM API is not configured or offline."""
     lower = prompt.lower()
     
     if current_scan:
@@ -76,64 +118,71 @@ def _local_security_answer(prompt: str, current_scan: Optional[dict] = None) -> 
         score = current_scan.get("overall_risk_score", 0)
         prediction = current_scan.get("prediction", "Unknown")
         flag_reasons = current_scan.get("flag_reasons", [])
-        top_contrib = current_scan.get("top_contributors", [])
         permissions = current_scan.get("permissions", [])
         
-        if "why" in lower and ("score" in lower or "risk" in lower or "high" in lower):
-            reasons_txt = "\n".join([f"- **{r.get('module', 'Module')}**: {r.get('reason', '')}" for r in flag_reasons[:4]]) or "Multiple high-entropy permission requests and suspicious metadata signatures were detected."
+        if any(w in lower for w in ["why", "score", "risk", "high", "danger", "safe"]):
+            reasons_txt = "\n".join([f"- **{r.get('module', 'Module')}**: {r.get('reason', '')}" for r in flag_reasons[:4]]) or "Detected high-privilege permission combinations and dynamic network behavior."
             return (
-                f"### Risk Assessment Breakdown for **{app_name}**\n\n"
-                f"The overall risk score is calculated at **{score}/100 ({prediction} Risk)** based on ensemble machine learning predictions.\n\n"
-                f"**Primary Risk Drivers:**\n{reasons_txt}\n\n"
-                f"**Action Recommended:** Exercise caution before deploying or installing this application."
+                f"### Risk Assessment for **{app_name}**\n\n"
+                f"The overall calculated risk score is **{score}/100 ({prediction} Risk)**.\n\n"
+                f"**Key Risk Drivers Identified:**\n{reasons_txt}\n\n"
+                f"**Recommendation:** Verify that this application was downloaded from an authenticated official source before granting sensitive permissions."
             )
             
-        if "permission" in lower:
+        if any(w in lower for w in ["permission", "access", "sms", "camera", "microphone"]):
             perm_list = "\n".join([f"- `{p}`" for p in permissions[:8]]) or "No dangerous permissions explicitly declared."
             return (
                 f"### Permission Analysis for **{app_name}**\n\n"
-                f"The application requests **{len(permissions)} permissions**. Notable security-sensitive permissions identified:\n\n"
+                f"The application requests **{len(permissions)} permissions**. Notable permissions include:\n\n"
                 f"{perm_list}\n\n"
-                f"Permissions such as `SMS`, `CAMERA`, and `ACCESSIBILITY` are high-impact attack vectors frequently leveraged in financial fraud."
-            )
-            
-        if "compare" in lower or "official" in lower:
-            is_official = current_scan.get("developer") in ["WhatsApp LLC", "Google LLC", "Telegram FZ-LLC", "Meta Platforms, Inc."]
-            verdict = "genuine developer certificate matched" if is_official else "third-party or unverified publisher signature"
-            return (
-                f"### Official App Comparison for **{app_name}**\n\n"
-                f"- **Package Name**: `{current_scan.get('package_name')}`\n"
-                f"- **Publisher Verification**: {verdict}\n"
-                f"- **Signature Integrity**: Certificate verified against known official signing fingerprints.\n\n"
-                f"Always verify the developer name in the Google Play Store before downloading APK builds from external repositories."
+                f"High-impact permissions such as SMS and Accessibility Services are frequently targeted in banking fraud and data exfiltration."
             )
 
-    if "accessibility" in lower:
+    if any(w in lower for w in ["accessibility", "service", "bind"]):
         return (
             "### Accessibility Service Threat Profile\n\n"
-            "The `BIND_ACCESSIBILITY_SERVICE` permission is one of the most critical attack vectors in Android banking trojans (e.g., SharkBot, Teabot, Anatsa).\n\n"
-            "- **Keystroke Logging**: Records passwords and PIN numbers entered by the user.\n"
-            "- **Screen Overlay Injections**: Spawns fake login windows over legitimate banking apps.\n"
-            "- **Automated Clicks**: Grants itself additional permissions and bypasses 2FA notifications without user interaction."
+            "The `BIND_ACCESSIBILITY_SERVICE` permission is one of the highest-impact attack vectors in Android banking trojans (e.g., SharkBot, Teabot, Anatsa):\n\n"
+            "- **Keystroke Logging**: Intercepts passwords and PINs entered by the user.\n"
+            "- **Screen Overlay Injections**: Spawns counterfeit credential harvest windows over legitimate banking apps.\n"
+            "- **Automated Clicks**: Disables Google Play Protect and grants itself additional administrative rights without user intervention."
         )
 
+    if any(w in lower for w in ["sms", "otp", "2fa"]):
+        return (
+            "### SMS Fraud & OTP Interception\n\n"
+            "Malicious applications frequently abuse `READ_SMS` and `RECEIVE_SMS` to intercept one-time verification passwords (OTPs) from banking apps and crypto wallets. "
+            "Legitimate financial institutions will never require third-party utility apps to access your SMS inbox."
+        )
+
+    if any(w in lower for w in ["trojan", "malware", "virus", "spyware"]):
+        return (
+            "### Mobile Trojan Attack Vectors\n\n"
+            "Modern Android threats typically utilize a multi-stage delivery architecture:\n\n"
+            "1. **Dropper / Loader Stage**: A seemingly benign utility (calculator, cleaner, PDF reader) bypasses initial vetting.\n"
+            "2. **Dynamic Code Loading**: Downloads an encrypted `.dex` or `.so` payload from an external C2 server.\n"
+            "3. **Overlay & ATS (Automated Transfer System)**: Hijacks active user sessions to initiate unauthorized transactions."
+        )
+
+    # General dynamic response based on prompt terms
     return (
-        f"### Security Advisory\n\n"
-        f"AppShield AI continuously monitors Android applications for fraud indicators, suspicious permission escalation, and malicious code patterns.\n\n"
-        f"- To analyze any application, paste a **Google Play Store URL**, an **APK direct download link**, or drop an **.apk file** directly into this chat.\n"
-        f"- You can also ask specific questions about permissions, malware behavior, or model classifications."
+        f"### Threat Intelligence Guidance\n\n"
+        f"Regarding your query about **'{prompt.strip()}'**:\n\n"
+        f"- In Android security, suspicious behaviors are typically evaluated across static manifest declarations, bytecode heuristics, and network domain reputations.\n"
+        f"- You can paste any **Google Play Store URL**, **APK download link**, or **package identifier** (e.g., `com.example.app`) directly into this chat to trigger an automated deep scan.\n"
+        f"- You can also upload any `.apk` file using the paperclip icon for decompilation and ML ensemble classification."
     )
 
 
 @router.get("/status")
 def get_copilot_status():
+    client = get_gemini_client()
     return {
         "status": "online",
-        "has_gemini": _gemini_client is not None,
-        "active_model": settings.GEMINI_MODEL if _gemini_client else "AppShield Security Engine (Local)",
+        "has_gemini": client is not None,
+        "active_model": settings.GEMINI_MODEL if client else "AppShield Security Engine (Local)",
         "available_models": [
-            {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "provider": "Google AI", "is_default": True},
-            {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "Google AI", "is_default": False},
+            {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "provider": "Google AI", "is_default": True},
+            {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro", "provider": "Google AI", "is_default": False},
             {"id": "appshield-local", "name": "AppShield Security Engine", "provider": "Local ML", "is_default": False},
         ],
     }
@@ -167,7 +216,7 @@ async def chat_copilot(
             ml_model_to_use = None
 
     # 1. Handle Direct APK File Upload via Chat
-    if file:
+    if file and hasattr(file, "filename") and file.filename:
         upload_res = await scan.scan_apk_upload(file=file, model_name=ml_model_to_use, current_user=current_user)
         app_name = upload_res.get("app_name", file.filename)
         score = upload_res.get("overall_risk_score", 0)
@@ -276,36 +325,54 @@ async def chat_copilot(
         }
 
     # 3. Handle Question or Security Investigation Prompt
-    # Retrieve current scan context if provided
     scan_ctx = None
     if current_scan_id:
-        scan_ctx = scan._RECENT_SCANS.get(current_scan_id)
+        scan_ctx = scan.get_scan_by_id(current_scan_id)
         if not scan_ctx:
-            # Try Mongo
-            try:
-                doc = scans_collection.find_one({"scan_id": current_scan_id}, {"_id": 0})
-                if doc:
-                    scan_ctx = doc
-            except Exception:
-                pass
+            scan_ctx = scan._RECENT_SCANS.get(current_scan_id)
+            if not scan_ctx:
+                try:
+                    doc = scans_collection.find_one({"scan_id": current_scan_id}, {"_id": 0})
+                    if doc:
+                        scan_ctx = doc
+                except Exception:
+                    pass
 
-    # If Gemini is available, query Gemini with threat context
-    if _gemini_client:
+    # Try Google Gemini with requested model
+    gemini_client = get_gemini_client(model_name)
+    if gemini_client:
         try:
             ctx_summary = ""
             if scan_ctx:
                 ctx_summary = (
-                    f"\n\nCONTEXT OF SCANNED APP:\n"
+                    f"\n\nCURRENT SCANNED APP TELEMETRY:\n"
                     f"- App Name: {scan_ctx.get('app_name')}\n"
                     f"- Package: {scan_ctx.get('package_name')}\n"
                     f"- Risk Score: {scan_ctx.get('overall_risk_score')}/100 ({scan_ctx.get('prediction')})\n"
                     f"- Flag Reasons: {json.dumps(scan_ctx.get('flag_reasons', []))}\n"
-                    f"- Permissions: {', '.join(scan_ctx.get('permissions', [])[:15])}\n"
+                    f"- Permissions: {', '.join(scan_ctx.get('permissions', [])[:20])}\n"
                 )
                 
-            prompt_full = f"{SYSTEM_PROMPT}{ctx_summary}\n\nUSER QUESTION: {prompt_str}"
-            response = _gemini_client.generate_content(prompt_full)
+            prompt_full = (
+                f"{SYSTEM_PROMPT}{ctx_summary}\n\n"
+                f"USER QUESTION: {prompt_str}\n\n"
+                f"Answer the user's question directly, clearly, and thoroughly. "
+                f"Provide actionable technical information."
+            )
+            response = await asyncio.to_thread(gemini_client.generate_content, prompt_full)
             reply = response.text
+            return {
+                "reply": reply,
+                "scan_result": None,
+                "steps": [],
+                "intent": "question",
+                "suggestions": [
+                    "Why is the risk score high?",
+                    "Show suspicious permissions",
+                    "Compare with official app",
+                    "Scan another Play Store app",
+                ],
+            }
         except Exception as e:
             logger.error(f"Gemini API call failed: {e}", exc_info=True)
             reply = _local_security_answer(prompt_str, scan_ctx)

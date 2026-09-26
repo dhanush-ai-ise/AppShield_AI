@@ -89,7 +89,7 @@ export default function DashboardPage() {
 
   const [scan, setScan] = useState<ScanResult>(SHOWCASE_DEFAULT_SCAN);
   const [activeTab, setActiveTab] = useState<"analysis" | "details" | "permissions" | "ml" | "screenshots">("analysis");
-  const [selectedModel, setSelectedModel] = useState("gemini-1.5-flash");
+  const [selectedModel, setSelectedModel] = useState("gemini-3.8-flash");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -244,12 +244,12 @@ export default function DashboardPage() {
 
   // Model selection options
   const MODELS = [
-    { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash", tag: "Fast & Smart" },
-    { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro", tag: "Deep Reasoning" },
+    { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", tag: "Fast & Smart" },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", tag: "Deep Reasoning" },
     { id: "appshield-local", name: "AppShield Local Engine", tag: "Offline ML" },
   ];
 
-  const currentModelLabel = MODELS.find((m) => m.id === selectedModel)?.name || "Gemini 1.5 Flash";
+  const currentModelLabel = MODELS.find((m) => m.id === selectedModel)?.name || "Gemini 3.8 Flash";
 
   // Score visual mapping
   const score = scan?.overall_risk_score ?? 82;
