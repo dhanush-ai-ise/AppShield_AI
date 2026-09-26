@@ -110,7 +110,7 @@ export default function Sidebar() {
     fetchData();
   }, []);
 
-  const isDark = pathname === "/dashboard" || pathname === "/";
+  const isDark = false;
 
   return (
     <aside className={clsx(

@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Send, Paperclip, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle,
   CheckCircle2, FileText, ExternalLink, Download, Sparkles, RefreshCw,
-  Layers, Check, Search, Bell, Sun, Menu, ChevronDown, Eye, Key,
+  Layers, Check, Search, Bell, Moon, Menu, ChevronDown, Eye, Key,
   Globe, FolderArchive, Star, Bot, Play, Package, Smartphone, ArrowRight,
   Info, Share2, Code2, Users, HelpCircle, X, ShieldX, CornerDownLeft,
   Cpu, Activity, Lock, Terminal, Radio
@@ -260,14 +260,14 @@ export default function DashboardPage() {
   const confidence = scan?.confidence ?? 96.3;
 
   return (
-    <div className="flex bg-[#0b0f19] h-screen max-h-screen overflow-hidden text-slate-100 font-sans selection:bg-violet-600 selection:text-white">
+    <div className="flex bg-[#f0f3f9] h-screen max-h-screen overflow-hidden text-slate-800 font-sans selection:bg-violet-600 selection:text-white">
       {/* Left Navigation Sidebar */}
       <Sidebar />
 
       {/* Main Command Center Column */}
       <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
-        {/* Global Dark Topbar */}
-        <header className="shrink-0 h-14 flex items-center justify-between px-6 border-b border-slate-800/80 bg-[#0c101d]/90 backdrop-blur z-20">
+        {/* Clean Light Topbar */}
+        <header className="shrink-0 h-14 flex items-center justify-between px-6 border-b border-slate-200/90 bg-white/90 backdrop-blur z-20 shadow-xs">
           <div className="flex items-center gap-3 w-1/3">
             <div className="relative w-full max-w-md">
               <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -282,62 +282,59 @@ export default function DashboardPage() {
                   }
                 }}
                 placeholder="Search apps, package names, or ask anything..."
-                className="w-full bg-[#131b2e] border border-slate-800 rounded-xl pl-9 pr-14 py-1.5 text-xs font-medium text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/80 transition-all"
+                className="w-full bg-slate-100/90 border border-slate-200 rounded-xl pl-9 pr-14 py-1.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-violet-500 focus:bg-white transition-all shadow-inner"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60 pointer-events-none">
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 pointer-events-none">
                 Ctrl K
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-800/60 border border-slate-700/60 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-semibold text-slate-300 text-[11px]">SOC Engine Live</span>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200/80 text-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-bold text-emerald-700 text-[11px]">SOC Engine Live</span>
             </div>
-            <button className="w-8 h-8 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-amber-400 transition-colors">
-              <Sun size={15} />
-            </button>
-            <button className="relative w-8 h-8 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-violet-400 transition-colors">
+            <button className="relative w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-violet-600 transition-colors">
               <Bell size={15} />
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center shadow-md">
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center shadow-xs">
                 3
               </span>
             </button>
-            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-800">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white font-extrabold text-xs shadow-md">
+            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white font-extrabold text-xs shadow-sm">
                 AD
               </div>
               <div className="leading-tight text-left hidden md:block">
-                <div className="text-xs font-bold text-white">admin</div>
-                <div className="text-[10px] font-semibold text-violet-400">Super Admin</div>
+                <div className="text-xs font-bold text-slate-900">admin</div>
+                <div className="text-[10px] font-semibold text-violet-600">Super Admin</div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* 2-Column Split Command Center - Fits Exactly to Viewport */}
+        {/* 2-Column Split Command Center - Viewport Locked */}
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
 
           {/* ══════════════════════════════════════════════════════
-              LEFT / CENTER PANEL: Conversational AI Copilot
+              LEFT / CENTER PANEL: Conversational AI Copilot (Light)
               ══════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-7 h-full flex flex-col min-h-0 overflow-hidden border-r border-slate-800/80 bg-[#0c101d]">
+          <div className="lg:col-span-7 h-full flex flex-col min-h-0 overflow-hidden border-r border-slate-200/90 bg-white">
             
             {/* Copilot Header */}
-            <div className="shrink-0 px-5 py-3 border-b border-slate-800/80 flex items-center justify-between bg-[#0e1322]">
+            <div className="shrink-0 px-5 py-3 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(124,58,237,0.4)] border border-violet-400/30">
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(124,58,237,0.3)] border border-violet-400/30">
                   <Bot size={20} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-xs font-extrabold text-white tracking-tight">AI Security Copilot</h2>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                    <h2 className="text-xs font-extrabold text-slate-900 tracking-tight">AI Security Copilot</h2>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-violet-100 text-violet-700 border border-violet-200">
                       Beta
                     </span>
                   </div>
-                  <p className="text-[10px] font-medium text-slate-400">
+                  <p className="text-[10px] font-medium text-slate-500">
                     Chat, scan, and analyze Android applications with the power of AI
                   </p>
                 </div>
@@ -348,15 +345,15 @@ export default function DashboardPage() {
                 <div className="relative">
                   <button
                     onClick={() => setModelDropdownOpen((v) => !v)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#141b2e] border border-slate-700/80 text-[11px] font-semibold text-slate-200 hover:border-violet-500 transition-all shadow-sm"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:border-violet-400 transition-all shadow-xs"
                   >
-                    <Sparkles size={12} className="text-violet-400" />
+                    <Sparkles size={12} className="text-violet-600" />
                     <span>Model: {currentModelLabel}</span>
                     <ChevronDown size={12} className="text-slate-400 ml-0.5" />
                   </button>
 
                   {modelDropdownOpen && (
-                    <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-[#131b2e] border border-slate-700 shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95">
+                    <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-white border border-slate-200 shadow-xl py-1.5 z-50 animate-in fade-in zoom-in-95">
                       {MODELS.map((m) => (
                         <button
                           key={m.id}
@@ -366,14 +363,14 @@ export default function DashboardPage() {
                           }}
                           className={clsx(
                             "w-full px-3 py-2 text-left text-xs flex items-center justify-between transition-colors",
-                            selectedModel === m.id ? "bg-violet-600/20 text-violet-300 font-bold" : "text-slate-300 hover:bg-slate-800"
+                            selectedModel === m.id ? "bg-violet-50 text-violet-700 font-bold" : "text-slate-700 hover:bg-slate-50"
                           )}
                         >
                           <div>
                             <div className="font-semibold">{m.name}</div>
                             <div className="text-[10px] text-slate-400">{m.tag}</div>
                           </div>
-                          {selectedModel === m.id && <Check size={14} className="text-violet-400" />}
+                          {selectedModel === m.id && <Check size={14} className="text-violet-600" />}
                         </button>
                       ))}
                     </div>
@@ -392,7 +389,7 @@ export default function DashboardPage() {
                       },
                     ]);
                   }}
-                  className="px-2.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-[0_0_15px_rgba(124,58,237,0.3)] transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-[0_0_15px_rgba(124,58,237,0.25)] transition-all"
                 >
                   <RefreshCw size={12} />
                   <span>New Chat</span>
@@ -401,7 +398,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Chat Messages Stream - Independent Scrolling */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 space-y-4 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 space-y-4 bg-[#f8fafc] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
               {messages.map((msg) => {
                 const isUser = msg.sender === "user";
                 return (
@@ -413,7 +410,7 @@ export default function DashboardPage() {
                     )}
                   >
                     {!isUser && (
-                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
                         <Bot size={15} />
                       </div>
                     )}
@@ -422,44 +419,44 @@ export default function DashboardPage() {
                       {/* Message Bubble */}
                       <div
                         className={clsx(
-                          "p-3.5 rounded-2xl text-xs leading-relaxed transition-all shadow-md",
+                          "p-3.5 rounded-2xl text-xs leading-relaxed transition-all shadow-xs",
                           isUser
-                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-none font-semibold"
-                            : "bg-[#131b2e] border border-slate-800 text-slate-200 rounded-tl-none font-normal"
+                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-none font-semibold shadow-md"
+                            : "bg-white border border-slate-200 text-slate-800 rounded-tl-none font-normal"
                         )}
                       >
                         {msg.text && (
-                          <div className="whitespace-pre-line prose-invert text-xs">
+                          <div className="whitespace-pre-line text-xs">
                             {msg.text}
                           </div>
                         )}
 
                         {/* Step-by-Step Checklist Card */}
                         {msg.steps && msg.steps.length > 0 && (
-                          <div className="mt-3 space-y-1.5 border-t border-slate-800/80 pt-2.5">
+                          <div className="mt-3 space-y-1.5 border-t border-slate-200/80 pt-2.5">
                             {msg.steps.map((st, idx) => (
                               <div
                                 key={idx}
-                                className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-slate-900/60 border border-slate-800/60 text-[11px]"
+                                className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px]"
                               >
                                 <div className="flex items-center gap-2">
                                   {st.status === "completed" ? (
-                                    <div className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                                    <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
                                       <Check size={11} strokeWidth={3} />
                                     </div>
                                   ) : st.status === "in_progress" ? (
-                                    <div className="w-4 h-4 rounded-full border-2 border-violet-400 border-t-transparent animate-spin shrink-0" />
+                                    <div className="w-4 h-4 rounded-full border-2 border-violet-600 border-t-transparent animate-spin shrink-0" />
                                   ) : (
-                                    <div className="w-4 h-4 rounded-full bg-slate-800 text-slate-500 flex items-center justify-center text-[10px] shrink-0">
+                                    <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] shrink-0">
                                       {st.step}
                                     </div>
                                   )}
-                                  <span className={clsx(st.status === "completed" ? "text-slate-200 font-medium" : "text-slate-400")}>
+                                  <span className={clsx(st.status === "completed" ? "text-slate-800 font-semibold" : "text-slate-500")}>
                                     {st.title}
                                   </span>
                                 </div>
                                 {st.time && (
-                                  <span className="text-[10px] font-mono text-slate-500">
+                                  <span className="text-[10px] font-mono text-slate-400 font-semibold">
                                     {st.time}
                                   </span>
                                 )}
@@ -470,24 +467,24 @@ export default function DashboardPage() {
 
                         {/* Interactive Scan Preview Card */}
                         {msg.scanPreview && (
-                          <div className="mt-3 p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 flex items-center justify-between">
+                          <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               {msg.scanPreview.app_icon ? (
                                 <img
                                   src={msg.scanPreview.app_icon}
                                   alt={msg.scanPreview.app_name}
-                                  className="w-10 h-10 rounded-xl object-contain bg-slate-800 p-1 border border-slate-700"
+                                  className="w-10 h-10 rounded-xl object-contain bg-white p-1 border border-slate-200 shadow-xs"
                                 />
                               ) : (
-                                <div className="w-10 h-10 rounded-xl bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-violet-300 font-extrabold text-sm">
+                                <div className="w-10 h-10 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-violet-700 font-extrabold text-sm">
                                   {msg.scanPreview.app_name?.slice(0, 2).toUpperCase()}
                                 </div>
                               )}
                               <div>
-                                <h4 className="text-xs font-bold text-white">
+                                <h4 className="text-xs font-bold text-slate-900">
                                   {msg.scanPreview.app_name}
                                 </h4>
-                                <p className="text-[10px] text-slate-400 font-mono">
+                                <p className="text-[10px] text-slate-500 font-mono">
                                   {msg.scanPreview.package_name}
                                 </p>
                               </div>
@@ -498,21 +495,21 @@ export default function DashboardPage() {
                               <div className={clsx(
                                 "px-2 py-0.5 rounded-lg text-xs font-black inline-flex items-center gap-1 border",
                                 msg.scanPreview.overall_risk_score >= 70
-                                  ? "bg-red-500/15 border-red-500/30 text-red-400"
+                                  ? "bg-red-50 border-red-200 text-red-700"
                                   : msg.scanPreview.overall_risk_score >= 40
-                                  ? "bg-amber-500/15 border-amber-500/30 text-amber-400"
-                                  : "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
                               )}>
                                 <span>{msg.scanPreview.overall_risk_score} / 100</span>
                               </div>
-                              <div className="text-[9px] font-bold text-red-400 mt-0.5">
+                              <div className="text-[9px] font-bold text-red-600 mt-0.5">
                                 {msg.scanPreview.overall_risk_score >= 70 ? "Critical Risk" : msg.scanPreview.overall_risk_score >= 40 ? "Suspicious" : "Safe"}
                               </div>
                             </div>
                           </div>
                         )}
 
-                        <div className="text-[10px] text-slate-500 mt-1 text-right font-mono">
+                        <div className="text-[10px] text-slate-400 mt-1 text-right font-mono">
                           {msg.timestamp}
                         </div>
                       </div>
@@ -524,10 +521,10 @@ export default function DashboardPage() {
                             <button
                               key={sIdx}
                               onClick={() => handleSuggestionClick(sugg)}
-                              className="px-2.5 py-1 rounded-full bg-[#131b2e] hover:bg-violet-600/20 border border-slate-700/70 hover:border-violet-500/60 text-[10px] font-semibold text-slate-300 hover:text-violet-300 transition-all cursor-pointer flex items-center gap-1"
+                              className="px-2.5 py-1 rounded-full bg-white hover:bg-violet-50 border border-slate-200 hover:border-violet-300 text-[10px] font-semibold text-slate-700 hover:text-violet-700 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
                             >
                               <span>{sugg}</span>
-                              <ChevronRight size={10} className="text-slate-500" />
+                              <ChevronRight size={10} className="text-slate-400" />
                             </button>
                           ))}
                         </div>
@@ -540,11 +537,11 @@ export default function DashboardPage() {
               {/* Live Loading Indicator */}
               {loading && (
                 <div className="flex gap-3 max-w-[85%] animate-pulse">
-                  <div className="w-8 h-8 rounded-xl bg-violet-600/30 border border-violet-500/40 flex items-center justify-center text-violet-400 shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-violet-700 shrink-0">
                     <Bot size={15} />
                   </div>
-                  <div className="p-3.5 rounded-2xl bg-[#131b2e] border border-slate-800 text-xs text-slate-300 rounded-tl-none flex items-center gap-2">
-                    <div className="w-3.5 h-3.5 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
+                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-slate-700 rounded-tl-none flex items-center gap-2 shadow-xs">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-violet-600 border-t-transparent animate-spin" />
                     <span>AppShield AI is analyzing application telemetry & model predictions...</span>
                   </div>
                 </div>
@@ -554,26 +551,26 @@ export default function DashboardPage() {
             </div>
 
             {/* Bottom Omni-Chat Input Bar */}
-            <div className="shrink-0 p-3 lg:p-4 border-t border-slate-800/80 bg-[#0e1322]">
+            <div className="shrink-0 p-3 lg:p-4 border-t border-slate-200/90 bg-white">
               {selectedFile && (
-                <div className="mb-2 px-3 py-1.5 rounded-xl bg-violet-500/10 border border-violet-500/30 text-xs text-violet-300 flex items-center justify-between">
+                <div className="mb-2 px-3 py-1.5 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-800 flex items-center justify-between">
                   <div className="flex items-center gap-2 truncate">
-                    <Package size={14} />
+                    <Package size={14} className="text-violet-600" />
                     <span className="font-semibold truncate">{selectedFile.name}</span>
-                    <span className="text-[10px] text-slate-400">({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)</span>
+                    <span className="text-[10px] text-slate-500">({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)</span>
                   </div>
-                  <button onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-white">
+                  <button onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-slate-700">
                     <X size={14} />
                   </button>
                 </div>
               )}
 
-              <div className="flex items-center gap-2 bg-[#141b2e] border border-slate-700/80 focus-within:border-violet-500/80 rounded-2xl p-1.5 transition-all shadow-inner">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 focus-within:border-violet-500 focus-within:bg-white rounded-2xl p-1.5 transition-all shadow-inner">
                 {/* File Attachment Button */}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-violet-400 hover:bg-slate-800/60 transition-colors"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-violet-600 hover:bg-slate-200/60 transition-colors"
                   title="Upload APK file"
                 >
                   <Paperclip size={16} />
@@ -601,12 +598,12 @@ export default function DashboardPage() {
                     }
                   }}
                   placeholder="Ask a question, paste a link, drop an APK file, or enter a package name..."
-                  className="flex-1 bg-transparent text-xs text-white placeholder:text-slate-500 focus:outline-none px-2"
+                  className="flex-1 bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none px-2"
                 />
 
                 {/* Active Model Pill Badge */}
-                <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-800/60 border border-slate-700/50 text-[10px] font-bold text-slate-400">
-                  <Sparkles size={10} className="text-violet-400" />
+                <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-200/80 border border-slate-300/60 text-[10px] font-bold text-slate-600">
+                  <Sparkles size={10} className="text-violet-600" />
                   <span>{currentModelLabel}</span>
                 </div>
 
@@ -615,7 +612,7 @@ export default function DashboardPage() {
                   type="button"
                   disabled={loading || (!input.trim() && !selectedFile)}
                   onClick={() => handleSendMessage()}
-                  className="w-8 h-8 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.4)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  className="w-8 h-8 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.3)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   <Send size={14} />
                 </button>
@@ -626,12 +623,12 @@ export default function DashboardPage() {
 
 
           {/* ══════════════════════════════════════════════════════
-              RIGHT PANEL: Live Threat Dossier & Analysis Canvas
+              RIGHT PANEL: Live Threat Dossier & Analysis Canvas (Light)
               ══════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-5 h-full flex flex-col min-h-0 overflow-hidden bg-[#0f172a]/95 border-l border-slate-800/80">
+          <div className="lg:col-span-5 h-full flex flex-col min-h-0 overflow-hidden bg-[#f8fafc] border-l border-slate-200/90 text-slate-800">
             
             {/* Top Navigation Tabs */}
-            <div className="shrink-0 px-4 py-2 border-b border-slate-800/80 bg-[#0e1322] flex items-center gap-1 overflow-x-auto scrollbar-none z-10">
+            <div className="shrink-0 px-4 py-2 border-b border-slate-200/90 bg-white flex items-center gap-1 overflow-x-auto scrollbar-none z-10">
               {[
                 { id: "analysis", label: "Analysis Result" },
                 { id: "details", label: "App Details" },
@@ -645,8 +642,8 @@ export default function DashboardPage() {
                   className={clsx(
                     "px-3 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all",
                     activeTab === tab.id
-                      ? "bg-violet-600/20 text-violet-400 border border-violet-500/40 shadow-sm"
-                      : "text-slate-400 hover:text-white hover:bg-slate-800/60"
+                      ? "bg-violet-50 text-violet-700 border border-violet-200 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
                   )}
                 >
                   {tab.label}
@@ -655,40 +652,40 @@ export default function DashboardPage() {
             </div>
 
             {/* Canvas Body - Independent Scrolling View */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 space-y-4 scrollbar-thin scrollbar-thumb-slate-800">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 space-y-4 scrollbar-thin scrollbar-thumb-slate-300">
               
-              {/* TAB 1: ANALYSIS RESULT (Matches Mockup) */}
+              {/* TAB 1: ANALYSIS RESULT */}
               {activeTab === "analysis" && (
                 <>
                   {/* 1. App Profile Card */}
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl flex items-center justify-between">
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       {scan.app_icon ? (
                         <img
                           src={scan.app_icon}
                           alt={scan.app_name}
-                          className="w-12 h-12 rounded-2xl object-contain bg-slate-900 p-1 border border-slate-700/60 shadow-md"
+                          className="w-12 h-12 rounded-2xl object-contain bg-slate-50 p-1 border border-slate-200 shadow-xs"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-black text-base">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-sm">
                           {scan.app_name?.slice(0, 2).toUpperCase() || "AP"}
                         </div>
                       )}
                       <div>
-                        <h3 className="text-sm font-extrabold text-white tracking-tight">
+                        <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
                           {scan.app_name}
                         </h3>
-                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                        <p className="text-[11px] text-slate-500 font-mono mt-0.5">
                           {scan.package_name}
                         </p>
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                             Google Play
                           </span>
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                             {scan.category || "Communication"}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             Official App
                           </span>
                         </div>
@@ -699,7 +696,7 @@ export default function DashboardPage() {
                       href={`https://play.google.com/store/apps/details?id=${scan.package_name}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-bold text-slate-300 hover:text-white flex items-center gap-1 transition-colors"
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[10px] font-bold text-slate-700 hover:text-slate-900 flex items-center gap-1 transition-colors shadow-xs"
                     >
                       <span>Play Store</span>
                       <ExternalLink size={11} />
@@ -707,7 +704,7 @@ export default function DashboardPage() {
                   </div>
 
                   {/* 2. Risk Overview Card (Circular SVG Radial Gauge) */}
-                  <div className="p-5 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl">
+                  <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
                     <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-3">
                       Risk Overview
                     </div>
@@ -723,7 +720,7 @@ export default function DashboardPage() {
                               cy="50"
                               r="40"
                               fill="transparent"
-                              stroke="#1e293b"
+                              stroke="#e2e8f0"
                               strokeWidth="9"
                             />
                             {/* Progress glow arc */}
@@ -739,13 +736,13 @@ export default function DashboardPage() {
                               strokeLinecap="round"
                               style={{
                                 transition: "stroke-dashoffset 1s ease-in-out",
-                                filter: `drop-shadow(0 0 6px ${scoreColor})`,
+                                filter: `drop-shadow(0 0 4px ${scoreColor})`,
                               }}
                             />
                           </svg>
                           
                           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                            <span className="text-xl font-black text-white tracking-tight">
+                            <span className="text-xl font-black text-slate-900 tracking-tight">
                               {score}
                             </span>
                             <span className="text-[9px] font-bold text-slate-400">
@@ -759,28 +756,28 @@ export default function DashboardPage() {
                       <div className="col-span-7 space-y-1.5">
                         <div className="flex items-center gap-1.5">
                           <AlertTriangle size={16} className="text-red-500 shrink-0" />
-                          <h4 className="text-xs font-extrabold text-red-400">
+                          <h4 className="text-xs font-extrabold text-red-600">
                             {riskTitle}
                           </h4>
                         </div>
-                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
                           This application exhibits elevated risk signatures that warrant security verification.
                         </p>
-                        <div className="pt-0.5 flex items-center gap-2 text-[10px] font-bold text-slate-300">
-                          <ShieldCheck size={13} className="text-violet-400" />
-                          <span>Confidence: <strong className="text-white font-mono">{confidence}%</strong></span>
+                        <div className="pt-0.5 flex items-center gap-2 text-[10px] font-bold text-slate-700">
+                          <ShieldCheck size={13} className="text-violet-600" />
+                          <span>Confidence: <strong className="text-slate-900 font-mono">{confidence}%</strong></span>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* 3. Top Risk Factors */}
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl space-y-3">
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
                         Top Risk Factors
                       </span>
-                      <button onClick={() => setActiveTab("permissions")} className="text-[10px] font-bold text-violet-400 hover:text-violet-300">
+                      <button onClick={() => setActiveTab("permissions")} className="text-[10px] font-bold text-violet-600 hover:text-violet-700">
                         View All
                       </button>
                     </div>
@@ -799,18 +796,18 @@ export default function DashboardPage() {
                         return (
                           <div key={idx} className="space-y-1">
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-semibold text-slate-300">{item.label || item.feature}</span>
+                              <span className="font-semibold text-slate-800">{item.label || item.feature}</span>
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-slate-400 font-bold text-[10px]">{pct}%</span>
+                                <span className="font-mono text-slate-500 font-bold text-[10px]">{pct}%</span>
                                 <span className={clsx(
                                   "text-[9px] font-extrabold px-1.5 py-0.5 rounded",
-                                  level === "High" ? "bg-red-500/20 text-red-400" : level === "Medium" ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"
+                                  level === "High" ? "bg-red-50 text-red-700 border border-red-200" : level === "Medium" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
                                 )}>
                                   {level}
                                 </span>
                               </div>
                             </div>
-                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div className="w-full h-1.5 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
                               <div
                                 className={clsx("h-full rounded-full transition-all duration-500", barColor)}
                                 style={{ width: `${Math.min(pct * 2.5, 100)}%` }}
@@ -823,12 +820,12 @@ export default function DashboardPage() {
                   </div>
 
                   {/* 4. ML Model Predictions Breakdown */}
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 shadow-xl space-y-3">
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
                         ML Model Predictions
                       </span>
-                      <button onClick={() => setActiveTab("ml")} className="text-[10px] font-bold text-violet-400 hover:text-violet-300">
+                      <button onClick={() => setActiveTab("ml")} className="text-[10px] font-bold text-violet-600 hover:text-violet-700">
                         Detailed Metrics
                       </button>
                     </div>
@@ -843,14 +840,14 @@ export default function DashboardPage() {
                         { name: "Ensemble", score: 86.7, color: "bg-violet-500" },
                       ].map((m) => (
                         <div key={m.name} className="flex items-center justify-between gap-3 text-[11px]">
-                          <span className="font-semibold text-slate-300 w-24 shrink-0">{m.name}</span>
-                          <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <span className="font-semibold text-slate-700 w-24 shrink-0">{m.name}</span>
+                          <div className="flex-1 h-1.5 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
                             <div
                               className={clsx("h-full rounded-full", m.color)}
                               style={{ width: `${m.score}%` }}
                             />
                           </div>
-                          <span className="font-mono text-slate-400 font-bold text-[10px] w-10 text-right">
+                          <span className="font-mono text-slate-500 font-bold text-[10px] w-10 text-right">
                             {m.score}%
                           </span>
                         </div>
@@ -864,7 +861,7 @@ export default function DashboardPage() {
                       href={api.downloadPdfReport(scan.scan_id)}
                       target="_blank"
                       rel="noreferrer"
-                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(124,58,237,0.4)] transition-all cursor-pointer"
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(124,58,237,0.25)] transition-all cursor-pointer"
                     >
                       <Download size={14} />
                       <span>Download PDF Report</span>
@@ -872,7 +869,7 @@ export default function DashboardPage() {
 
                     <button
                       onClick={() => setActiveTab("permissions")}
-                      className="w-full py-2 px-4 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-slate-300 hover:text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      className="w-full py-2 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
                     >
                       <Code2 size={13} />
                       <span>View Declared Permissions</span>
@@ -884,60 +881,60 @@ export default function DashboardPage() {
               {/* TAB 2: APP DETAILS */}
               {activeTab === "details" && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 space-y-3">
-                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                      <FileText size={14} className="text-violet-400" />
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <FileText size={14} className="text-violet-600" />
                       <span>Package Specification</span>
                     </h4>
                     <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80">
-                        <div className="text-[10px] text-slate-400 font-semibold">Application Name</div>
-                        <div className="text-white font-bold mt-0.5">{scan.app_name}</div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-semibold">Application Name</div>
+                        <div className="text-slate-900 font-bold mt-0.5">{scan.app_name}</div>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80">
-                        <div className="text-[10px] text-slate-400 font-semibold">Package Identifier</div>
-                        <div className="text-white font-mono text-[11px] truncate mt-0.5">{scan.package_name}</div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-semibold">Package Identifier</div>
+                        <div className="text-slate-900 font-mono text-[11px] truncate mt-0.5">{scan.package_name}</div>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80">
-                        <div className="text-[10px] text-slate-400 font-semibold">Version</div>
-                        <div className="text-white font-mono mt-0.5">{scan.version || "2.24.18.77"}</div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-semibold">Version</div>
+                        <div className="text-slate-900 font-mono mt-0.5">{scan.version || "2.24.18.77"}</div>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80">
-                        <div className="text-[10px] text-slate-400 font-semibold">Downloads</div>
-                        <div className="text-white font-mono mt-0.5">{scan.downloads || "5B+"}</div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-semibold">Downloads</div>
+                        <div className="text-slate-900 font-mono mt-0.5">{scan.downloads || "5B+"}</div>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80">
-                        <div className="text-[10px] text-slate-400 font-semibold">Category</div>
-                        <div className="text-white mt-0.5">{scan.category || "Communication"}</div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-semibold">Category</div>
+                        <div className="text-slate-900 mt-0.5">{scan.category || "Communication"}</div>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80">
-                        <div className="text-[10px] text-slate-400 font-semibold">Rating</div>
-                        <div className="text-amber-400 font-bold mt-0.5">★ {scan.rating || 4.3} / 5.0</div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] text-slate-500 font-semibold">Rating</div>
+                        <div className="text-amber-600 font-bold mt-0.5">★ {scan.rating || 4.3} / 5.0</div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 space-y-3">
-                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                      <Lock size={14} className="text-violet-400" />
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <Lock size={14} className="text-violet-600" />
                       <span>Security & Integrity Details</span>
                     </h4>
                     <div className="space-y-2 text-xs">
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80 flex justify-between items-center">
-                        <span className="text-slate-400">Developer</span>
-                        <span className="text-white font-bold">{scan.developer || "WhatsApp LLC"}</span>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+                        <span className="text-slate-500">Developer</span>
+                        <span className="text-slate-900 font-bold">{scan.developer || "WhatsApp LLC"}</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80 flex justify-between items-center">
-                        <span className="text-slate-400">Scan Timestamp</span>
-                        <span className="text-slate-300 font-mono text-[11px]">{scan.scanned_at ? new Date(scan.scanned_at).toLocaleString() : "Just now"}</span>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+                        <span className="text-slate-500">Scan Timestamp</span>
+                        <span className="text-slate-700 font-mono text-[11px]">{scan.scanned_at ? new Date(scan.scanned_at).toLocaleString() : "Just now"}</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80 flex justify-between items-center">
-                        <span className="text-slate-400">Primary Model</span>
-                        <span className="text-violet-400 font-bold">{scan.model_used || "LightGBM"}</span>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+                        <span className="text-slate-500">Primary Model</span>
+                        <span className="text-violet-700 font-bold">{scan.model_used || "LightGBM"}</span>
                       </div>
-                      <div className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80 flex justify-between items-center">
-                        <span className="text-slate-400">Input Source</span>
-                        <span className="text-slate-300 font-mono text-[11px]">{scan.input_type || "play_url"}</span>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
+                        <span className="text-slate-500">Input Source</span>
+                        <span className="text-slate-700 font-mono text-[11px]">{scan.input_type || "play_url"}</span>
                       </div>
                     </div>
                   </div>
@@ -947,13 +944,13 @@ export default function DashboardPage() {
               {/* TAB 3: PERMISSIONS */}
               {activeTab === "permissions" && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800">
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <h4 className="text-xs font-bold text-white">Declared Manifest Permissions</h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Found {scan.permissions?.length || 10} permissions in Dalvik manifest</p>
+                        <h4 className="text-xs font-bold text-slate-900">Declared Manifest Permissions</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Found {scan.permissions?.length || 10} permissions in Dalvik manifest</p>
                       </div>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
                         {scan.permissions?.filter(p => p.includes("SMS") || p.includes("CAMERA") || p.includes("ACCESSIBILITY") || p.includes("RECORD")).length || 4} Critical
                       </span>
                     </div>
@@ -974,16 +971,16 @@ export default function DashboardPage() {
                         const isHigh = perm.includes("SMS") || perm.includes("ACCESSIBILITY") || perm.includes("ALERT_WINDOW");
                         const isMed = perm.includes("CAMERA") || perm.includes("RECORD") || perm.includes("LOCATION");
                         return (
-                          <div key={pIdx} className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80 flex items-center justify-between gap-2">
+                          <div key={pIdx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
                             <div className="truncate">
-                              <div className="font-mono text-xs text-slate-200 font-semibold truncate">{perm}</div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
+                              <div className="font-mono text-xs text-slate-800 font-semibold truncate">{perm}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
                                 {isHigh ? "High-impact permission frequently abused for financial exfiltration" : isMed ? "Sensitive personal hardware/data access" : "Standard network capability"}
                               </div>
                             </div>
                             <span className={clsx(
                               "text-[9px] font-extrabold px-2 py-0.5 rounded shrink-0",
-                              isHigh ? "bg-red-500/20 text-red-400 border border-red-500/30" : isMed ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-blue-500/20 text-blue-400"
+                              isHigh ? "bg-red-50 text-red-700 border border-red-200" : isMed ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
                             )}>
                               {isHigh ? "Critical" : isMed ? "Sensitive" : "Normal"}
                             </span>
@@ -998,9 +995,9 @@ export default function DashboardPage() {
               {/* TAB 4: ML ANALYSIS */}
               {activeTab === "ml" && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 space-y-3">
-                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                      <Cpu size={14} className="text-violet-400" />
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <Cpu size={14} className="text-violet-600" />
                       <span>Class Probabilities</span>
                     </h4>
                     <div className="space-y-2">
@@ -1011,10 +1008,10 @@ export default function DashboardPage() {
                       ].map((item) => (
                         <div key={item.label} className="space-y-1">
                           <div className="flex justify-between text-xs font-semibold">
-                            <span className="text-slate-300">{item.label}</span>
-                            <span className="text-slate-400 font-mono">{item.pct}%</span>
+                            <span className="text-slate-700">{item.label}</span>
+                            <span className="text-slate-500 font-mono">{item.pct}%</span>
                           </div>
-                          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                          <div className="w-full h-2 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
                             <div className={clsx("h-full rounded-full", item.color)} style={{ width: `${item.pct}%` }} />
                           </div>
                         </div>
@@ -1022,9 +1019,9 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-[#131b2e] border border-slate-800 space-y-3">
-                    <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                      <Activity size={14} className="text-violet-400" />
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <Activity size={14} className="text-violet-600" />
                       <span>Classifier Confidence Benchmark</span>
                     </h4>
                     <div className="space-y-2 text-xs">
@@ -1034,14 +1031,14 @@ export default function DashboardPage() {
                         { model: "XGBoost", accuracy: "98.12%", auc: "0.989", status: "Ensemble Contributor" },
                         { model: "CatBoost", accuracy: "97.65%", auc: "0.981", status: "Ensemble Contributor" },
                       ].map((m) => (
-                        <div key={m.model} className="p-2.5 rounded-xl bg-[#0e1424] border border-slate-800/80 flex items-center justify-between">
+                        <div key={m.model} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                           <div>
-                            <div className="font-bold text-white">{m.model}</div>
-                            <div className="text-[10px] text-slate-400">{m.status}</div>
+                            <div className="font-bold text-slate-900">{m.model}</div>
+                            <div className="text-[10px] text-slate-500">{m.status}</div>
                           </div>
                           <div className="text-right">
-                            <div className="text-violet-400 font-mono font-bold">{m.accuracy}</div>
-                            <div className="text-[10px] text-slate-500">AUC {m.auc}</div>
+                            <div className="text-violet-700 font-mono font-bold">{m.accuracy}</div>
+                            <div className="text-[10px] text-slate-400">AUC {m.auc}</div>
                           </div>
                         </div>
                       ))}
@@ -1052,24 +1049,24 @@ export default function DashboardPage() {
 
               {/* TAB 5: SCREENSHOTS */}
               {activeTab === "screenshots" && (
-                <div className="p-5 rounded-2xl bg-[#131b2e] border border-slate-800 text-center space-y-4">
-                  <Smartphone size={32} className="mx-auto text-violet-400" />
+                <div className="p-5 rounded-2xl bg-white border border-slate-200 text-center space-y-4 shadow-xs">
+                  <Smartphone size={32} className="mx-auto text-violet-600" />
                   <div>
-                    <h4 className="text-sm font-bold text-white">Visual UI Security Inspection</h4>
-                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                    <h4 className="text-sm font-bold text-slate-900">Visual UI Security Inspection</h4>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                       Screenshots and UI layout frames captured during automated dynamic sandbox emulation.
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="h-44 rounded-xl bg-[#0e1424] border border-slate-800 flex flex-col items-center justify-center p-3 text-slate-500 text-xs">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 mb-2 flex items-center justify-center text-slate-400">1</div>
-                      <span>Login / Phone Auth View</span>
-                      <span className="text-[10px] text-emerald-400 mt-1">✓ No Overlay Detected</span>
+                    <div className="h-44 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-3 text-slate-600 text-xs">
+                      <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 mb-2 flex items-center justify-center text-slate-700 font-bold shadow-xs">1</div>
+                      <span className="font-medium text-slate-800">Login / Phone Auth View</span>
+                      <span className="text-[10px] text-emerald-700 font-semibold mt-1">✓ No Overlay Detected</span>
                     </div>
-                    <div className="h-44 rounded-xl bg-[#0e1424] border border-slate-800 flex flex-col items-center justify-center p-3 text-slate-500 text-xs">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 mb-2 flex items-center justify-center text-slate-400">2</div>
-                      <span>Permission Request Dialog</span>
-                      <span className="text-[10px] text-amber-400 mt-1">⚠️ Full SMS Access Prompt</span>
+                    <div className="h-44 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-3 text-slate-600 text-xs">
+                      <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 mb-2 flex items-center justify-center text-slate-700 font-bold shadow-xs">2</div>
+                      <span className="font-medium text-slate-800">Permission Request Dialog</span>
+                      <span className="text-[10px] text-amber-700 font-semibold mt-1">⚠️ Full SMS Access Prompt</span>
                     </div>
                   </div>
                 </div>
