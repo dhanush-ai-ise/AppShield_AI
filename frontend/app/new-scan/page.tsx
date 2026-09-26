@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import {
   Play, Link2, Upload, Package, Hash, Loader2, Sparkles, ChevronRight,
   ShieldCheck, MessageSquare, Code2, UserCheck, Award, ImageIcon,
-  FolderArchive, BrainCircuit, FileText, Check, Info, Settings2, ShieldAlert
+  FolderArchive, BrainCircuit, FileText, Check, Info, Settings2, ShieldAlert,
+  DownloadCloud
 } from "lucide-react";
 import clsx from "clsx";
 import Sidebar from "@/components/Sidebar";
@@ -79,6 +80,13 @@ export default function NewScanPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    percent: number;
+    message: string;
+    downloadedMb?: number;
+    totalMb?: number | null;
+    status?: string;
+  } | null>(null);
 
   // Configuration options
   const [analysisDepth, setAnalysisDepth] = useState("standard");
@@ -103,6 +111,8 @@ export default function NewScanPage() {
     }
     setLoading(true);
     setError(null);
+    setDownloadProgress(null);
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
     try {
       let result;
       if (tab === "play_url") {
@@ -112,7 +122,31 @@ export default function NewScanPage() {
         result = await api.scanPlayUrl(value, selectedModel);
       }
       else if (tab === "package_name") result = await api.scanPackageName(value, selectedModel);
-      else if (tab === "apk_url") result = await api.scanApkUrl(value, selectedModel);
+      else if (tab === "apk_url") {
+        const trackerId = `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        setDownloadProgress({
+          percent: 5,
+          message: "Connecting to remote APK server...",
+          status: "connecting",
+        });
+
+        pollTimer = setInterval(async () => {
+          try {
+            const prog = await api.getApkDownloadProgress(trackerId);
+            if (prog && prog.message) {
+              setDownloadProgress({
+                percent: prog.percent ?? 0,
+                message: prog.message,
+                downloadedMb: prog.downloaded_mb,
+                totalMb: prog.total_mb,
+                status: prog.status,
+              });
+            }
+          } catch {}
+        }, 350);
+
+        result = await api.scanApkUrl(value, selectedModel, trackerId);
+      }
       else if (tab === "apk_upload" && file) result = await api.scanApkUpload(file, selectedModel);
       else if (tab === "hash") result = await api.scanByHash(value, selectedModel);
       else throw new Error(NEW_SCAN.errors.noInput);
@@ -141,7 +175,9 @@ export default function NewScanPage() {
     } catch (e: any) {
       setError(e.message || NEW_SCAN.errors.scanFailed);
     } finally {
+      if (pollTimer) clearInterval(pollTimer);
       setLoading(false);
+      setDownloadProgress(null);
     }
   }
 
@@ -305,21 +341,89 @@ export default function NewScanPage() {
                   </div>
                 )}
 
+                {/* Real-time APK Download / Scan Progress Card */}
+                {loading && tab === "apk_url" && downloadProgress && (
+                  <div className="clay-card p-4 rounded-2xl border border-violet-200/90 bg-gradient-to-br from-violet-50/90 via-purple-50/70 to-indigo-50/80 shadow-md flex flex-col gap-2.5 transition-all duration-300">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                      <div className="flex items-center gap-2">
+                        {downloadProgress.status === "analyzing" ? (
+                          <ShieldCheck size={17} className="text-emerald-600 animate-pulse" />
+                        ) : (
+                          <DownloadCloud size={17} className="text-violet-600 animate-bounce" />
+                        )}
+                        <span className="font-extrabold text-slate-900">
+                          {downloadProgress.status === "analyzing"
+                            ? "Decompiling & AI Security Analysis"
+                            : "Downloading Remote APK"}
+                        </span>
+                      </div>
+                      <span className="text-violet-700 font-extrabold text-xs px-2 py-0.5 rounded-full bg-violet-100/80">
+                        {downloadProgress.percent > 0 ? `${downloadProgress.percent}%` : "Connecting..."}
+                      </span>
+                    </div>
+
+                    {/* Animated Progress Bar */}
+                    <div className="w-full h-2.5 bg-slate-200/80 rounded-full overflow-hidden relative shadow-inner">
+                      <div
+                        className="h-full bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 transition-all duration-300 rounded-full shadow"
+                        style={{ width: `${Math.max(downloadProgress.percent, 6)}%` }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+                      <span className="truncate pr-2 font-semibold text-slate-600">
+                        {downloadProgress.message}
+                      </span>
+                      {downloadProgress.totalMb && (
+                        <span className="whitespace-nowrap font-bold text-violet-600">
+                          Total: ~{downloadProgress.totalMb} MB
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Submit Action Button */}
                 <button
                   type="submit"
                   disabled={loading || (tab === "apk_upload" ? !file : !value)}
-                  className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-700 hover:via-purple-700 hover:to-indigo-700 text-white font-extrabold text-sm shadow-[0_8px_20px_rgba(124,58,237,0.3)] hover:shadow-[0_12px_28px_rgba(124,58,237,0.4)] transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="relative overflow-hidden w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-700 hover:via-purple-700 hover:to-indigo-700 text-white font-extrabold text-sm shadow-[0_8px_20px_rgba(124,58,237,0.3)] hover:shadow-[0_12px_28px_rgba(124,58,237,0.4)] transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group"
                 >
+                  {/* Glowing progress fill layer inside button */}
+                  {loading && tab === "apk_url" && downloadProgress && (
+                    <div
+                      className="absolute inset-y-0 left-0 bg-white/20 transition-all duration-300 pointer-events-none rounded-2xl"
+                      style={{ width: `${Math.max(downloadProgress.percent, 8)}%` }}
+                    />
+                  )}
+
                   {loading ? (
-                    <>
-                      <Loader2 size={18} className="animate-spin" />
-                      Analyzing Security Features...
-                    </>
+                    tab === "apk_url" && downloadProgress ? (
+                      <div className="relative z-10 flex items-center justify-center gap-2 w-full px-1">
+                        {downloadProgress.status === "downloading" ? (
+                          <DownloadCloud size={18} className="animate-bounce shrink-0" />
+                        ) : (
+                          <Loader2 size={18} className="animate-spin shrink-0" />
+                        )}
+                        <span className="truncate tracking-wide">
+                          {downloadProgress.message}
+                        </span>
+                        {downloadProgress.percent > 0 && (
+                          <span className="text-[11px] font-extrabold bg-black/20 px-2 py-0.5 rounded-full ml-auto shrink-0">
+                            {downloadProgress.percent}%
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="relative z-10 flex items-center justify-center gap-2">
+                        <Loader2 size={18} className="animate-spin" />
+                        Analyzing Security Features...
+                      </div>
+                    )
                   ) : (
-                    <>
+                    <div className="relative z-10 flex items-center justify-center gap-2">
                       Run Scan <ChevronRight size={18} />
-                    </>
+                    </div>
                   )}
                 </button>
               </div>

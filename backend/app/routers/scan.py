@@ -614,16 +614,83 @@ async def scan_apk_upload(
         cleanup(apk_path)
 
 
+_APK_DOWNLOAD_PROGRESS: Dict[str, dict] = {}
+
+
+@router.get("/apk-download-progress/{tracker_id}")
+def get_apk_download_progress(tracker_id: str):
+    prog = _APK_DOWNLOAD_PROGRESS.get(tracker_id)
+    if not prog:
+        return {
+            "status": "waiting",
+            "percent": 0,
+            "downloaded_mb": 0.0,
+            "total_mb": None,
+            "message": "Connecting to remote APK server...",
+        }
+    return prog
+
+
 @router.post("/apk-url")
 async def scan_apk_url(
     url: str = Form(...),
     model_name: Optional[str] = Form(None),
+    tracker_id: Optional[str] = Form(None),
     current_user: Optional[dict] = Depends(get_optional_user),
 ):
+    if tracker_id:
+        if len(_APK_DOWNLOAD_PROGRESS) > 100:
+            for k in list(_APK_DOWNLOAD_PROGRESS.keys())[:-50]:
+                _APK_DOWNLOAD_PROGRESS.pop(k, None)
+        _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+            "status": "connecting",
+            "percent": 0,
+            "downloaded_mb": 0.0,
+            "total_mb": None,
+            "message": "Connecting to APK download server...",
+        }
+
+    def _on_progress(downloaded_bytes: int, total_bytes: Optional[int]):
+        if not tracker_id:
+            return
+        downloaded_mb = round(downloaded_bytes / (1024 * 1024), 1)
+        total_mb = round(total_bytes / (1024 * 1024), 1) if total_bytes else None
+        if total_bytes and total_bytes > 0:
+            pct = min(99, int((downloaded_bytes / total_bytes) * 100))
+            msg = f"Downloading APK: {downloaded_mb} MB / {total_mb} MB ({pct}%)"
+        else:
+            pct = 0
+            msg = f"Downloading APK: {downloaded_mb} MB received..."
+
+        _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+            "status": "downloading",
+            "percent": pct,
+            "downloaded_mb": downloaded_mb,
+            "total_mb": total_mb,
+            "message": msg,
+        }
+
+    apk_path = None
     try:
-        # Download APK
-        apk_path = download_apk(url)
+        # Download APK with real-time progress callbacks
+        apk_path = download_apk(url, progress_callback=_on_progress)
+        if tracker_id:
+            last_down = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("downloaded_mb", 0.0)
+            total_mb = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("total_mb") or last_down
+            _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+                "status": "analyzing",
+                "percent": 100,
+                "downloaded_mb": last_down,
+                "total_mb": total_mb,
+                "message": f"Downloaded ({last_down} MB) • Analyzing Security Features...",
+            }
     except Exception as exc:
+        if tracker_id:
+            _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+                "status": "error",
+                "percent": 0,
+                "message": f"Download failed: {str(exc)}",
+            }
         logger.error(f"Failed to download APK from {url}: {str(exc)}", exc_info=True)
         raise HTTPException(status_code=400, detail=f"Failed to download APK: {str(exc)}") from exc
         
@@ -650,10 +717,18 @@ async def scan_apk_url(
             "app_icon": _image_data_url(icon_bytes),
             "apk_sha256": apk_sha256,
         }
-        return run_pipeline(collected, model_name, current_user)
+        res = run_pipeline(collected, model_name, current_user)
+        if tracker_id:
+            _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+                "status": "completed",
+                "percent": 100,
+                "message": "Scan Complete!",
+            }
+        return res
     finally:
         # Cleanup temp APK file
-        cleanup(apk_path)
+        if apk_path:
+            cleanup(apk_path)
 
 
 @router.post("/package-name")

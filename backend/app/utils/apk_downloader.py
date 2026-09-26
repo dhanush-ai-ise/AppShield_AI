@@ -6,6 +6,7 @@ file, stores only extracted features."
 import hashlib
 import uuid
 from pathlib import Path
+from typing import Optional, Callable
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -24,7 +25,12 @@ MAX_DOWNLOAD_SECONDS = getattr(settings, "MAX_DOWNLOAD_SECONDS", 300)  # 5 minut
 CHUNK_SIZE = 256 * 1024  # 256 KB chunks
 
 
-def _stream_to_file(response, dest: Path, deadline: float):
+def _stream_to_file(
+    response,
+    dest: Path,
+    deadline: float,
+    progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+):
     max_mb = MAX_APK_SIZE_BYTES // (1024 * 1024)
     content_type = response.headers.get("content-type", "").lower()
     if "text/html" in content_type or "application/xhtml" in content_type:
@@ -34,6 +40,7 @@ def _stream_to_file(response, dest: Path, deadline: float):
         )
 
     content_length = response.headers.get("content-length")
+    cl = None
     if content_length:
         try:
             cl = int(content_length)
@@ -44,6 +51,13 @@ def _stream_to_file(response, dest: Path, deadline: float):
         except ValueError as val_err:
             if "exceeds" in str(val_err):
                 raise
+            cl = None
+
+    if progress_callback:
+        try:
+            progress_callback(0, cl)
+        except Exception:
+            pass
 
     total_bytes = 0
     first_chunk = True
@@ -68,9 +82,17 @@ def _stream_to_file(response, dest: Path, deadline: float):
                 if total_bytes > MAX_APK_SIZE_BYTES:
                     raise ValueError(f"APK download exceeded maximum {max_mb}MB limit.")
                 f.write(chunk)
+                if progress_callback:
+                    try:
+                        progress_callback(total_bytes, cl)
+                    except Exception:
+                        pass
 
 
-def download_apk(url: str) -> Path:
+def download_apk(
+    url: str,
+    progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+) -> Path:
     dest = settings.TEMP_APK_DIR / f"{uuid.uuid4().hex}.apk"
     session = requests.Session()
     
@@ -94,13 +116,13 @@ def download_apk(url: str) -> Path:
         try:
             with session.get(url, stream=True, timeout=(10, 30), headers=headers, verify=True, allow_redirects=True) as r:
                 r.raise_for_status()
-                _stream_to_file(r, dest, deadline)
+                _stream_to_file(r, dest, deadline, progress_callback)
             return dest
         except requests.exceptions.SSLError:
             logger.warning(f"SSL verification failed for {url}, retrying without verification")
             with session.get(url, stream=True, timeout=(10, 30), headers=headers, verify=False, allow_redirects=True) as r:
                 r.raise_for_status()
-                _stream_to_file(r, dest, deadline)
+                _stream_to_file(r, dest, deadline, progress_callback)
             return dest
     except Exception:
         cleanup(dest)

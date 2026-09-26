@@ -198,12 +198,16 @@ export const api = {
     return request("/api/scan/package-name", { method: "POST", body: form });
   },
 
-  scanApkUrl: (url: string, modelName?: string) => {
+  scanApkUrl: (url: string, modelName?: string, trackerId?: string) => {
     const form = new FormData();
     form.append("url", url);
     if (modelName) form.append("model_name", modelName);
+    if (trackerId) form.append("tracker_id", trackerId);
     return request("/api/scan/apk-url", { method: "POST", body: form });
   },
+
+  getApkDownloadProgress: (trackerId: string) =>
+    request(`/api/scan/apk-download-progress/${encodeURIComponent(trackerId)}`),
 
   scanApkUpload: (file: File, modelName?: string) => {
     const form = new FormData();
