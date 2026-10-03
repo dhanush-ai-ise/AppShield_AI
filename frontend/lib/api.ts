@@ -146,7 +146,8 @@ export const api = {
       return result;
     } catch (err: any) {
       if (err?.message && (err.message.includes("Failed to fetch") || err.message.includes("NetworkError"))) {
-        const payload = { sub: username, role: username === "admin" ? "super_admin" : "user", exp: 9999999999 };
+        const userEmail = username.includes("@") ? username : `${username}@appshield.ai`;
+        const payload = { sub: userEmail, email: userEmail, username, role: username === "admin" ? "super_admin" : "user", exp: 9999999999 };
         const b64 = btoa(JSON.stringify(payload));
         const mockToken = `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.${b64}.mock`;
         if (typeof window !== "undefined") {
@@ -226,6 +227,14 @@ export const api = {
   scanHistory: (limit = 20, allUsers = false) =>
     request(`/api/scan/history?limit=${limit}${allUsers ? "&all_users=true" : ""}`),
   getScan: (scanId: string) => request(`/api/scan/${scanId}`),
+  deleteScan: (scanId: string) => request(`/api/scan/${scanId}`, { method: "DELETE" }),
+  deleteScansBatch: (scanIds: string[]) =>
+    request("/api/scan/delete-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scan_ids: scanIds }),
+    }),
+  clearScanHistory: () => request("/api/scan/history", { method: "DELETE" }),
 
   getBenchmark: () => request("/api/models/benchmark"),
 
@@ -269,12 +278,13 @@ export const api = {
 
   copilotStatus: () => request("/api/copilot/status"),
 
-  copilotChat: (prompt: string, currentScanId?: string, modelName?: string, file?: File) => {
+  copilotChat: (prompt: string, currentScanId?: string, modelName?: string, file?: File, chatHistory?: string) => {
     const form = new FormData();
     if (prompt) form.append("prompt", prompt);
     if (currentScanId) form.append("current_scan_id", currentScanId);
     if (modelName) form.append("model_name", modelName);
     if (file) form.append("file", file);
+    if (chatHistory) form.append("chat_history", chatHistory);
     return request("/api/copilot/chat", { method: "POST", body: form }, 600000);
   },
 };

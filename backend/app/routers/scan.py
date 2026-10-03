@@ -212,6 +212,7 @@ DEFAULT_BASELINE_SCANS = [
 
 def _load_recent_scans():
     global _RECENT_SCANS
+    admin_email = f"{settings.ADMIN_USERNAME}@appshield.ai"
     try:
         if _RECENT_SCANS_FILE.exists():
             data = json.loads(_RECENT_SCANS_FILE.read_text(encoding="utf-8"))
@@ -223,6 +224,21 @@ def _load_recent_scans():
     if not _RECENT_SCANS:
         for sc in DEFAULT_BASELINE_SCANS:
             _RECENT_SCANS[sc["scan_id"]] = sc
+
+    # Ensure valid user_email, user_id, and sync to MongoDB
+    try:
+        for sid, sc in list(_RECENT_SCANS.items()):
+            cur_email = str(sc.get("user_email") or "")
+            if not cur_email or "@" not in cur_email or cur_email == "admin":
+                sc["user_email"] = admin_email
+                sc["scanned_by"] = admin_email
+            if not sc.get("user_id"):
+                sc["user_id"] = "usr_admin_001"
+            clean_item = {k: v for k, v in sc.items() if k != "_id"}
+            scans_collection.replace_one({"scan_id": sid}, clean_item, upsert=True)
+        logger.info(f"Loaded and synced {len(_RECENT_SCANS)} scans into MongoDB with user {admin_email}.")
+    except Exception as exc:
+        logger.warning(f"Could not sync loaded scans to MongoDB: {exc}")
 
 
 _load_recent_scans()
@@ -497,10 +513,23 @@ def run_pipeline(
     for module, duration in module_timings.items():
         logger.info(f"  {module}: {duration}s")
 
-    user_email = (current_user.get("email") or current_user.get("username")) if current_user else "admin"
+    raw_email = current_user.get("email") if isinstance(current_user, dict) else None
+    raw_username = current_user.get("username") if isinstance(current_user, dict) else None
+    if raw_email and "@" in str(raw_email):
+        user_email = str(raw_email).strip().lower()
+    elif raw_username and "@" in str(raw_username):
+        user_email = str(raw_username).strip().lower()
+    elif raw_username in (settings.ADMIN_USERNAME, "admin") or not raw_email:
+        user_email = f"{settings.ADMIN_USERNAME}@appshield.ai"
+    else:
+        user_email = f"{raw_username}@appshield.ai"
+
+    user_id = (current_user.get("user_id") if isinstance(current_user, dict) else None) or ("usr_admin_001" if user_email.startswith(settings.ADMIN_USERNAME) else f"usr_{uuid.uuid4().hex[:8]}")
+
     scan_id = str(uuid.uuid4())
     report = {
         "scan_id": scan_id,
+        "user_id": user_id,
         "user_email": user_email,
         "scanned_by": user_email,
         "app_name": collected.get("app_name"),
@@ -528,10 +557,10 @@ def run_pipeline(
     _save_scan_to_cache(scan_id, report)
 
     try:
-        scans_collection.insert_one({**report})
-    except Exception:
-        # Don't fail the scan if MongoDB isn't running
-        pass
+        scans_collection.replace_one({"scan_id": scan_id}, {k: v for k, v in report.items() if k != "_id"}, upsert=True)
+        logger.info(f"Persisted scan dossier {scan_id} ({report.get('app_name')}) to MongoDB scans collection for user {user_email}.")
+    except Exception as exc:
+        logger.warning(f"Failed to persist scan to MongoDB: {exc}")
     return report
 
 
@@ -949,6 +978,78 @@ def scan_history(
         "active_user": user_id,
         "is_admin": is_admin,
     }
+
+
+@router.delete("/history")
+def clear_all_scans():
+    """Clear all scan records from MongoDB and disk cache."""
+    global _RECENT_SCANS, DEFAULT_BASELINE_SCANS
+    _RECENT_SCANS.clear()
+    DEFAULT_BASELINE_SCANS = []
+    try:
+        _RECENT_SCANS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _RECENT_SCANS_FILE.write_text("{}", encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not clear recent scans file: {e}")
+    try:
+        scans_collection.delete_many({})
+    except Exception as e:
+        logger.warning(f"Could not clear MongoDB scans: {e}")
+    return {"status": "ok", "message": "All scan records and caches cleared successfully."}
+
+
+class BatchDeleteRequest(BaseModel):
+    scan_ids: List[str]
+
+
+@router.post("/delete-batch")
+def delete_scans_batch(req: BatchDeleteRequest):
+    """Delete multiple scan records by IDs from MongoDB and disk cache."""
+    global _RECENT_SCANS, DEFAULT_BASELINE_SCANS
+    deleted_ids = []
+    scan_ids_set = set(req.scan_ids)
+    for sid in req.scan_ids:
+        if sid in _RECENT_SCANS:
+            del _RECENT_SCANS[sid]
+            deleted_ids.append(sid)
+    DEFAULT_BASELINE_SCANS = [sc for sc in DEFAULT_BASELINE_SCANS if sc.get("scan_id") not in scan_ids_set]
+    deleted_count = 0
+    try:
+        res = scans_collection.delete_many({"scan_id": {"$in": req.scan_ids}})
+        deleted_count = res.deleted_count
+    except Exception as e:
+        logger.warning(f"Could not batch delete from MongoDB: {e}")
+    try:
+        _RECENT_SCANS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        serializable = {k: {x: y for x, y in v.items() if x != "_id"} for k, v in _RECENT_SCANS.items()}
+        _RECENT_SCANS_FILE.write_text(json.dumps(serializable), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not update recent scans file: {e}")
+    return {"status": "ok", "deleted_count": max(deleted_count, len(deleted_ids)), "scan_ids": req.scan_ids}
+
+
+@router.delete("/{scan_id}")
+def delete_scan(scan_id: str):
+    """Delete a single scan record by ID from MongoDB and disk cache."""
+    global _RECENT_SCANS, DEFAULT_BASELINE_SCANS
+    found = False
+    if scan_id in _RECENT_SCANS:
+        del _RECENT_SCANS[scan_id]
+        found = True
+    DEFAULT_BASELINE_SCANS = [sc for sc in DEFAULT_BASELINE_SCANS if sc.get("scan_id") != scan_id]
+    try:
+        res = scans_collection.delete_one({"scan_id": scan_id})
+        if res.deleted_count > 0:
+            found = True
+    except Exception as e:
+        logger.warning(f"Could not delete scan from MongoDB: {e}")
+    try:
+        _RECENT_SCANS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        serializable = {k: {x: y for x, y in v.items() if x != "_id"} for k, v in _RECENT_SCANS.items()}
+        _RECENT_SCANS_FILE.write_text(json.dumps(serializable), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not update recent scans file: {e}")
+    return {"status": "ok", "deleted_id": scan_id, "found": found}
 
 
 @router.get("/{scan_id}")

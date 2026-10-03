@@ -1,231 +1,285 @@
 "use client";
-import { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard, ScanLine, History, Layers, FileBarChart2, GitCompare,
-  ShieldAlert, TrendingUp, BrainCircuit, Database, Users, ScrollText,
-  Settings, ShieldCheck, ChevronsLeft, ChevronsRight,
+  LucideIcon,
+  LayoutDashboard,
+  ScanLine,
+  History,
+  Settings,
+  Shield,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LogOut,
+  Database,
+  ExternalLink,
 } from "lucide-react";
 import clsx from "clsx";
-import { SIDEBAR, APP_NAME, APP_TAGLINE } from "@/lib/messages";
 import { api } from "@/lib/api";
-import { ScanResult } from "@/lib/types";
-import { useEffect } from "react";
 
-const NAV_SECTIONS = [
+export interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+export const NAV_ITEMS: NavItem[] = [
   {
-    label: SIDEBAR.navSections.main,
-    items: [
-      { href: "/dashboard", label: SIDEBAR.navItems.dashboard, icon: LayoutDashboard },
-      { href: "/scan-history", label: SIDEBAR.navItems.scanHistory, icon: History },
-      { href: "/batch-scan", label: SIDEBAR.navItems.batchScan, icon: Layers },
-    ],
+    href: "/dashboard",
+    label: "Workspace",
+    icon: LayoutDashboard,
   },
   {
-    label: SIDEBAR.navSections.research,
-    items: [
-      { href: "/research", label: SIDEBAR.navItems.researchMode, icon: BrainCircuit },
-      { href: "/research#comparison", label: SIDEBAR.navItems.modelComparison, icon: GitCompare },
-      { href: "/research#benchmark", label: SIDEBAR.navItems.benchmarkResults, icon: FileBarChart2 },
-    ],
+    href: "/new-scan",
+    label: "New Scan",
+    icon: ScanLine,
   },
   {
-    label: SIDEBAR.navSections.analytics,
-    items: [
-      { href: "/dashboard#risk", label: SIDEBAR.navItems.riskAnalytics, icon: ShieldAlert },
-      { href: "/dashboard#trends", label: SIDEBAR.navItems.trendsInsights, icon: TrendingUp },
-      { href: "/dashboard#reports", label: SIDEBAR.navItems.reports, icon: FileBarChart2 },
-    ],
+    href: "/scan-history",
+    label: "Scan History",
+    icon: History,
   },
   {
-    label: SIDEBAR.navSections.management,
-    items: [
-      { href: "/datasets", label: SIDEBAR.navItems.datasets, icon: Database },
-      { href: "/research#training", label: SIDEBAR.navItems.modelTraining, icon: BrainCircuit },
-      { href: "/management/users", label: SIDEBAR.navItems.users, icon: Users },
-      { href: "/management/logs", label: SIDEBAR.navItems.systemLogs, icon: ScrollText },
-      { href: "/management/settings", label: SIDEBAR.navItems.settings, icon: Settings },
-    ],
+    href: "/settings",
+    label: "Settings",
+    icon: Settings,
   },
 ];
 
-function formatRelativeTime(dateString?: string): string {
-  if (!dateString) return "N/A";
-  try {
-    const timestamp = new Date(dateString).getTime();
-    if (isNaN(timestamp)) return "N/A";
-    const diffMs = Date.now() - timestamp;
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  } catch {
-    return "N/A";
-  }
-}
-
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
-  const [systemStatus, setSystemStatus] = useState({
-    modelsTrained: 7,
-    scansToday: 0,
-    avgAccuracy: 98.43,
-    lastTraining: "N/A",
-  });
+  const [scansCount, setScansCount] = useState<number | null>(null);
+  const [isMongoOnline, setIsMongoOnline] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const benchmark = await api.getBenchmark().catch(() => null);
-        const scanHistory = await api.scanHistory(100).catch(() => null);
-
-        const scans = scanHistory?.scans ?? [];
-        const todayStr = new Date().toDateString();
-        const todayCount = scans.filter((s: ScanResult) => {
-          if (!s.scanned_at) return false;
-          try {
-            return new Date(s.scanned_at).toDateString() === todayStr;
-          } catch {
-            return false;
-          }
-        }).length;
-
-        const bestModel = benchmark?.results && benchmark?.best_model ? benchmark.results[benchmark.best_model] : null;
-
-        setSystemStatus({
-          modelsTrained: benchmark?.results ? Object.keys(benchmark.results).length : 7,
-          scansToday: todayCount,
-          avgAccuracy: bestModel?.accuracy ?? 98.43,
-          lastTraining: formatRelativeTime(benchmark?.last_trained_at),
-        });
-      } catch {
-        // Fallback
-      }
-    };
-    fetchData();
+    setMounted(true);
   }, []);
 
-  const isDark = false;
+  const adminName = useMemo(() => {
+    if (!mounted) return "Security Analyst";
+    return api.adminUsername() || "Security Analyst";
+  }, [mounted]);
+
+  const adminRole = useMemo(() => {
+    if (!mounted) return "Admin";
+    return api.adminRole() || "Admin";
+  }, [mounted]);
+
+  const initials = useMemo(() => {
+    if (!adminName) return "SA";
+    const parts = adminName.split(/[@._ -]/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return adminName.slice(0, 2).toUpperCase();
+  }, [adminName]);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .scanHistory(100)
+      .then((res) => {
+        if (active && res && Array.isArray(res.scans)) {
+          setScansCount(res.scans.length);
+          setIsMongoOnline(true);
+        }
+      })
+      .catch(() => {
+        if (active) setIsMongoOnline(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [pathname]);
+
+  const isCurrentActive = (href: string) => {
+    if (href === "/dashboard") {
+      return pathname === "/" || pathname === "/dashboard";
+    }
+    return pathname.startsWith(href);
+  };
+
+  const handleLogout = () => {
+    api.logoutAdmin();
+    router.replace("/login");
+  };
 
   return (
-    <aside className={clsx(
-      "shrink-0 h-screen max-h-screen sticky top-0 flex flex-col overflow-hidden transition-all duration-300 z-30",
-      isDark ? "bg-[#0c101d] border-r border-slate-800/80 text-white" : "bg-[#f0f3f9] border-r border-slate-200/80 text-slate-800",
-      collapsed ? "w-20" : "w-64"
-    )}>
-      {/* Brand Header */}
-      <div className={clsx(
-        "flex items-center gap-3 px-5 py-5 border-b",
-        isDark ? "border-slate-800/80" : "border-slate-200/60"
-      )}>
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.4)] border border-white/20">
-          <ShieldCheck size={22} className="text-white drop-shadow" />
-        </div>
-        {!collapsed && (
-          <div>
-            <div className={clsx("text-base font-extrabold leading-tight tracking-tight", isDark ? "text-white" : "text-slate-900")}>
-              AppShield <span className="text-violet-500">AI</span>
+    <aside
+      className={clsx(
+        "shrink-0 h-screen sticky top-0 flex flex-col justify-between border-r border-slate-200/80 bg-white text-slate-800 transition-all duration-200 z-30 select-none",
+        collapsed ? "w-16" : "w-60"
+      )}
+    >
+      {/* ── Brand Header ── */}
+      <div className="flex flex-col">
+        <div className="h-14 px-4 flex items-center justify-between border-b border-slate-100">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2.5 overflow-hidden group cursor-pointer"
+            title="AppShield AI Platform"
+          >
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs group-hover:bg-blue-700 transition-colors shrink-0">
+              <Shield className="w-4 h-4 fill-white/20 stroke-[2.2]" />
             </div>
-            <div className={clsx("text-[11px] font-medium leading-tight", isDark ? "text-slate-400" : "text-slate-500")}>
-              AI Fraud Detection Platform
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Navigation Links */}
-      <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6 scrollbar-none">
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.label}>
             {!collapsed && (
-              <div className={clsx("px-2 mb-2.5 text-[10px] font-extrabold tracking-wider uppercase", isDark ? "text-slate-500" : "text-slate-400")}>
-                {section.label}
+              <div className="leading-tight truncate">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-900 font-bold text-sm tracking-tight">AppShield</span>
+                  <span className="text-[10px] font-mono font-semibold bg-blue-50 text-blue-700 px-1 py-0.2 rounded border border-blue-200/60">
+                    AI
+                  </span>
+                </div>
               </div>
             )}
-            <div className="space-y-1.5">
-              {section.items.map((item) => {
-                const active = pathname === item.href.split("#")[0] || pathname === item.href.split("?")[0];
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className={clsx(
-                      "flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200",
-                      active
-                        ? isDark
-                          ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.4)]"
-                          : "clay-inset-active text-violet-700"
-                        : isDark
-                        ? "text-slate-400 hover:text-white hover:bg-slate-800/60"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-white/80 hover:shadow-[4px_4px_10px_rgba(163,177,198,0.25),-4px_-4px_10px_rgba(255,255,255,0.9)]",
-                      collapsed && "justify-center px-0"
-                    )}
-                    title={item.label}
-                  >
-                    <Icon size={17} className={active ? "text-white" : isDark ? "text-slate-400" : "text-slate-400"} />
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </nav>
+          </Link>
 
-      {/* System Status Card */}
-      <div className={clsx("p-4 border-t space-y-3", isDark ? "border-slate-800/80" : "border-slate-200/60")}>
-        {!collapsed && (
-          <div className={clsx("p-4 rounded-2xl", isDark ? "bg-[#131b2e] border border-slate-800 shadow-xl" : "panel")}>
-            <div className={clsx("text-[10px] font-extrabold tracking-wider uppercase mb-2", isDark ? "text-slate-400" : "text-slate-400")}>
-              System Status
-            </div>
-            
-            <div className={clsx(
-              "flex items-center gap-2 px-3 py-1.5 text-[11px] font-bold mb-3 rounded-xl border",
-              isDark
-                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                : "clay-badge-green"
-            )}>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              All Systems Operational
-            </div>
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Collapse sidebar"
+            >
+              <PanelLeftClose size={15} />
+            </button>
+          )}
+        </div>
 
-            <div className={clsx("p-3 space-y-2 text-[11px] rounded-xl", isDark ? "bg-[#0e1424] border border-slate-800/80" : "clay-inset")}>
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="font-medium">Scans Today</span>
-                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.scansToday}</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="font-medium">Models Trained</span>
-                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.modelsTrained}</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="font-medium">Avg. Accuracy</span>
-                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.avgAccuracy}%</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-400">
-                <span className="font-medium">Last Training</span>
-                <span className={clsx("font-extrabold", isDark ? "text-white font-mono" : "text-slate-900")}>{systemStatus.lastTraining}</span>
-              </div>
-            </div>
+        {/* ── Navigation Links ── */}
+        <nav className="p-2.5 space-y-1">
+          {NAV_ITEMS.map((item) => {
+            const active = isCurrentActive(item.href);
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={clsx(
+                  "group relative flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                  active
+                    ? "bg-slate-100 text-slate-900 font-semibold"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+                  collapsed && "justify-center px-0 py-2.5"
+                )}
+                title={collapsed ? item.label : undefined}
+              >
+                {/* Active Indicator Bar */}
+                {active && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-blue-600 rounded-r" />
+                )}
+
+                <Icon
+                  size={16}
+                  className={clsx(
+                    "shrink-0 transition-colors",
+                    active ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"
+                  )}
+                />
+
+                {!collapsed && (
+                  <span className="flex-1 truncate">{item.label}</span>
+                )}
+
+                {!collapsed && item.href === "/scan-history" && scansCount !== null && scansCount > 0 && (
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/60 text-slate-600 font-medium">
+                    {scansCount}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* ── Footer ── */}
+      <div className="p-2.5 border-t border-slate-100 space-y-2">
+        {/* Expand button if collapsed */}
+        {collapsed && (
+          <div className="flex justify-center pb-1">
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Expand sidebar"
+            >
+              <PanelLeftOpen size={16} />
+            </button>
           </div>
         )}
-        <button 
+
+        {/* MongoDB Status */}
+        {!collapsed ? (
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-slate-50 border border-slate-200/60 text-[11px] font-mono">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={clsx(
+                  "w-1.5 h-1.5 rounded-full",
+                  isMongoOnline ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+                )}
+              />
+              <span className="text-slate-500 text-[10px]">Mongo 27017</span>
+            </div>
+            <span
+              className={clsx(
+                "text-[9px] font-semibold uppercase tracking-wider",
+                isMongoOnline ? "text-emerald-700" : "text-rose-700"
+              )}
+            >
+              {isMongoOnline ? "Connected" : "Offline"}
+            </span>
+          </div>
+        ) : (
+          <div className="flex justify-center py-1" title={`MongoDB: ${isMongoOnline ? "Connected" : "Offline"}`}>
+            <span
+              className={clsx(
+                "w-2 h-2 rounded-full",
+                isMongoOnline ? "bg-emerald-500" : "bg-rose-500"
+              )}
+            />
+          </div>
+        )}
+
+        {/* User Profile */}
+        <div
           className={clsx(
-            "flex items-center gap-2 text-xs font-bold w-full justify-center py-2 rounded-xl transition-colors",
-            isDark ? "bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/60" : "clay-btn-soft text-slate-600 hover:text-slate-900"
+            "flex items-center gap-2 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-colors",
+            collapsed && "justify-center px-0"
           )}
-          onClick={() => setCollapsed(!collapsed)}
         >
-          {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
-          {!collapsed && <span>Collapse Sidebar</span>}
-        </button>
+          <div
+            className="w-7 h-7 rounded-md bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-[11px] shrink-0"
+            suppressHydrationWarning
+          >
+            {initials}
+          </div>
+
+          {!collapsed && (
+            <div className="flex-1 min-w-0 leading-tight">
+              <div className="text-xs font-semibold text-slate-900 truncate" suppressHydrationWarning>
+                {adminName}
+              </div>
+              <div className="text-[10px] text-slate-500 font-mono truncate" suppressHydrationWarning>
+                {adminRole}
+              </div>
+            </div>
+          )}
+
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="text-slate-400 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
+              title="Sign Out"
+            >
+              <LogOut size={13} />
+            </button>
+          )}
+        </div>
       </div>
     </aside>
   );

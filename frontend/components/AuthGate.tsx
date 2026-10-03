@@ -18,7 +18,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     if (!authenticated) {
       const explicitlyLoggedOut = typeof window !== "undefined" && window.sessionStorage.getItem("appshield_logged_out");
       if (!explicitlyLoggedOut && typeof window !== "undefined") {
-        window.localStorage.setItem("appshield_admin_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.dev");
+        window.localStorage.setItem("appshield_admin_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiAiYWRtaW5AYXBwc2hpZWxkLmFpIiwgImVtYWlsIjogImFkbWluQGFwcHNoaWVsZC5haSIsICJ1c2VybmFtZSI6ICJhZG1pbiIsICJyb2xlIjogInN1cGVyX2FkbWluIiwgImV4cCI6IDk5OTk5OTk5OTl9.dev");
         authenticated = true;
       }
     }
@@ -36,10 +36,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     setReady(true);
   }, [pathname, router, searchParams]);
 
-  if (!ready) {
+  if (!ready && pathname === "/login") {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
-        Loading...
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center text-sm font-medium text-slate-500">
+        Loading AppShield AI...
       </div>
     );
   }

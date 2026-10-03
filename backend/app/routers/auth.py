@@ -134,6 +134,34 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     }
 
 
+def _resolve_user_dict(sub_val: str, role_val: Optional[str] = None) -> dict:
+    is_admin = sub_val in (settings.ADMIN_USERNAME, f"{settings.ADMIN_USERNAME}@appshield.ai") or role_val in ("admin", "super_admin")
+    try:
+        db_user = users_collection.find_one({"$or": [{"username": sub_val}, {"email": sub_val}]})
+        if db_user:
+            return {
+                "user_id": db_user.get("user_id") or ("usr_admin_001" if is_admin else "usr_analyst_002"),
+                "username": db_user.get("username") or sub_val,
+                "email": db_user.get("email") or (f"{sub_val}@appshield.ai" if "@" not in sub_val else sub_val),
+                "full_name": db_user.get("full_name") or ("Security Administrator" if is_admin else "Analyst"),
+                "role": db_user.get("role") or ("super_admin" if is_admin else "user"),
+                "is_admin": is_admin or db_user.get("is_admin", False),
+            }
+    except Exception:
+        pass
+
+    resolved_email = sub_val if "@" in sub_val else f"{sub_val}@appshield.ai"
+    resolved_user = sub_val.split("@")[0] if "@" in sub_val else sub_val
+    return {
+        "user_id": "usr_admin_001" if is_admin else f"usr_{uuid.uuid4().hex[:8]}",
+        "username": resolved_user,
+        "email": resolved_email,
+        "full_name": "Security Administrator" if is_admin else resolved_user.capitalize(),
+        "role": "super_admin" if is_admin else (role_val or "user"),
+        "is_admin": is_admin,
+    }
+
+
 def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[dict]:
     """
     Extract user from Bearer token if provided, without raising 401.
@@ -146,15 +174,9 @@ def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[d
 
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username = payload.get("sub")
+        username = payload.get("sub") or payload.get("email")
         if username:
-            is_admin = payload.get("role") in ("admin", "super_admin") or username == settings.ADMIN_USERNAME
-            return {
-                "username": username,
-                "email": username,
-                "role": payload.get("role", "admin" if is_admin else "user"),
-                "is_admin": is_admin,
-            }
+            return _resolve_user_dict(username, payload.get("role"))
     except Exception:
         # Fallback decode in case token was signed with mock/dev key
         try:
@@ -163,15 +185,9 @@ def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[d
                 b64 = parts[1].replace("-", "+").replace("_", "/")
                 b64 += "=" * ((4 - len(b64) % 4) % 4)
                 p = json.loads(base64.b64decode(b64))
-                sub = p.get("sub")
+                sub = p.get("sub") or p.get("email")
                 if sub:
-                    is_admin = sub == settings.ADMIN_USERNAME or p.get("role") in ("admin", "super_admin")
-                    return {
-                        "username": sub,
-                        "email": sub,
-                        "role": p.get("role", "admin" if is_admin else "user"),
-                        "is_admin": is_admin,
-                    }
+                    return _resolve_user_dict(sub, p.get("role"))
         except Exception:
             pass
 

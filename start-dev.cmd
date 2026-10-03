@@ -8,15 +8,13 @@ set "FRONTEND=%ROOT%frontend"
 echo Starting AppShield AI development services...
 echo.
 
-docker info >nul 2>nul
+echo Checking local MongoDB status...
+powershell -NoProfile -Command "if (((Get-Service -Name '*mongo*' -ErrorAction SilentlyContinue).Status -contains 'Running') -or (Test-NetConnection -ComputerName 127.0.0.1 -Port 27017 -WarningAction SilentlyContinue).TcpTestSucceeded) { exit 0 } else { exit 1 }" >nul 2>nul
 if %errorlevel% equ 0 (
-  echo Docker daemon is running. Starting database services: Postgres, MongoDB, Redis...
-  pushd "%ROOT%" >nul
-  docker compose up -d
-  popd >nul
+  echo [OK] MongoDB is running locally on port 27017.
 ) else (
-  echo Docker daemon is not active. Proceeding in standalone mode.
-  echo (Scans and ML models work directly; start Docker Desktop if history persistence is needed.)
+  echo [Notice] MongoDB was not detected on localhost:27017.
+  echo (Make sure your local MongoDB service is running, e.g. 'net start MongoDB')
 )
 
 if not exist "%BACKEND%\venv\Scripts\python.exe" (

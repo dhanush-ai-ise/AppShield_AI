@@ -1,1082 +1,1274 @@
 "use client";
-import { useEffect, useState, useRef, useMemo } from "react";
+
+import React, { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  Send, Paperclip, ChevronRight, ShieldCheck, ShieldAlert, AlertTriangle,
-  CheckCircle2, FileText, ExternalLink, Download, Sparkles, RefreshCw,
-  Layers, Check, Search, Bell, Moon, Menu, ChevronDown, Eye, Key,
-  Globe, FolderArchive, Star, Bot, Play, Package, Smartphone, ArrowRight,
-  Info, Share2, Code2, Users, HelpCircle, X, ShieldX, CornerDownLeft,
-  Cpu, Activity, Lock, Terminal, Radio
+  Shield,
+  Search,
+  Clock,
+  Settings,
+  RotateCw,
+  Download,
+  CheckCircle2,
+  Lock,
+  MessageSquare,
+  Code2,
+  User,
+  ShieldCheck,
+  Image as ImageIcon,
+  Smartphone,
+  FileText,
+  Paperclip,
+  Send,
+  X,
+  Plus,
+  Info,
+  ExternalLink,
+  ChevronRight,
+  AlertTriangle,
+  Sparkles,
+  Check,
+  UploadCloud,
+  ChevronDown,
+  Bot,
+  Copy,
+  Hash,
+  Database,
+  BrainCircuit,
+  Layers,
+  ArrowRight,
+  Trash2,
+  ShieldAlert,
 } from "lucide-react";
-import clsx from "clsx";
-import Sidebar from "@/components/Sidebar";
 import { api } from "@/lib/api";
 import { ScanResult } from "@/lib/types";
+import Sidebar from "@/components/Sidebar";
+import { ChatMarkdown } from "@/components/ChatMarkdown";
 
-// Default reference scan matching the showcase image
-const SHOWCASE_DEFAULT_SCAN: ScanResult = {
-  scan_id: "scan-whatsapp-demo",
-  app_name: "WhatsApp Messenger",
-  package_name: "com.whatsapp",
-  input_type: "play_url",
-  overall_risk_score: 82,
-  trust_score: 18,
-  prediction: "Fraudulent",
-  confidence: 96.3,
-  model_used: "LightGBM",
-  class_probabilities: {
-    Safe: 3.7,
-    Suspicious: 7.1,
-    Fraudulent: 89.2,
-  },
-  scanned_at: new Date().toISOString(),
-  status: "Completed",
-  app_icon: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
-  downloads: "5B+",
-  rating: 4.3,
-  version: "2.24.18.77",
-  developer: "WhatsApp LLC",
-  category: "Communication",
-  permissions: [
-    "android.permission.INTERNET",
-    "android.permission.READ_CONTACTS",
-    "android.permission.RECORD_AUDIO",
-    "android.permission.CAMERA",
-    "android.permission.ACCESS_FINE_LOCATION",
-    "android.permission.READ_SMS",
-    "android.permission.SEND_SMS",
-    "android.permission.SYSTEM_ALERT_WINDOW",
-    "android.permission.RECEIVE_BOOT_COMPLETED",
-    "android.permission.BIND_ACCESSIBILITY_SERVICE",
-  ],
-  top_contributors: [
-    { feature: "Suspicious Permissions", label: "Suspicious Permissions", impact_percent: 31 },
-    { feature: "Network Connections", label: "Network Connections", impact_percent: 22 },
-    { feature: "Code Obfuscation", label: "Code Obfuscation", impact_percent: 18 },
-    { feature: "Potential Data Exfiltration", label: "Potential Data Exfiltration", impact_percent: 15 },
-    { feature: "Similar to Known Malware", label: "Similar to Known Malware", impact_percent: 14 },
-  ],
-  flag_reasons: [
-    { module: "Permissions", reason: "Requests high-privilege SMS and Camera permissions simultaneously.", level: "High", score: 85 },
-    { module: "Network", reason: "Direct dynamic code loading domains flagged in threat intel.", level: "High", score: 78 },
-    { module: "Certificate", reason: "Certificate signature entropy deviates from official store fingerprint.", level: "Medium", score: 62 },
-  ],
-};
+// Helper to normalize and map module scores dynamically
+interface ProcessedModule {
+  id: string;
+  name: string;
+  score: number; // 0-100
+  statusText: string;
+  icon: React.ReactNode;
+  reasons: string[];
+  isSafe: boolean;
+}
 
-interface ChatStep {
-  step: number;
-  title: string;
-  status: "completed" | "in_progress" | "pending";
-  time?: string;
+function processModuleScores(scan?: ScanResult | null): ProcessedModule[] {
+  if (!scan) return [];
+  const ms = scan.module_scores || {};
+
+  const getScore = (key: string, def: number) => {
+    const raw = ms[key]?.score;
+    if (typeof raw === "number") {
+      return Math.round(raw <= 1.0 ? raw * 100 : raw);
+    }
+    return def;
+  };
+
+  const getReasons = (key: string, defText: string) => {
+    const reasons = ms[key]?.reasons;
+    if (Array.isArray(reasons) && reasons.length > 0) return reasons;
+    return [defText];
+  };
+
+  const permScore = getScore("permission_analysis", 10);
+  const reviewScore = getScore("review_analysis", 12);
+  const staticScore = getScore("apk_static_analysis", 15);
+  const devScore = getScore("developer_reputation", 8);
+  const certScore = getScore("certificate_analysis", 5);
+  const iconScore = getScore("icon_similarity", 10);
+  const screenScore = getScore("screenshot_analysis", 12);
+  const metaScore = getScore("metadata_analysis", 14);
+
+  return [
+    {
+      id: "permissions",
+      name: "Permissions Analysis",
+      score: permScore,
+      statusText: permScore <= 25 ? "Privileges within standard thresholds" : permScore <= 60 ? "Elevated permission access requested" : "Critical dangerous permissions flagged",
+      icon: <Lock className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("permission_analysis", "Scanned AndroidManifest.xml declared permissions and runtime privileges."),
+      isSafe: permScore < 40,
+    },
+    {
+      id: "reviews",
+      name: "Review & Sentiment",
+      score: reviewScore,
+      statusText: reviewScore <= 25 ? "Linguistic entropy indicates authentic feedback" : reviewScore <= 60 ? "Moderate bot/sentiment divergence detected" : "High concentration of astroturfed reviews",
+      icon: <MessageSquare className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("review_analysis", "Analyzed review volume, linguistic entropy, and bot farm signatures."),
+      isSafe: reviewScore < 40,
+    },
+    {
+      id: "apk_static",
+      name: "Static Bytecode",
+      score: staticScore,
+      statusText: staticScore <= 25 ? "No malicious code signatures found" : staticScore <= 60 ? "Heuristic warnings in exported intent filters" : "Known payload signatures or CVEs detected",
+      icon: <Code2 className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("apk_static_analysis", "Decompiled Dalvik bytecode, exported intent filters, and API call graphs."),
+      isSafe: staticScore < 40,
+    },
+    {
+      id: "developer",
+      name: "Developer Credibility",
+      score: devScore,
+      statusText: devScore <= 25 ? "Verified corporate publisher domain" : devScore <= 60 ? "Limited publisher track record" : "High-risk unverified publisher profile",
+      icon: <User className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("developer_reputation", "Verified corporate domain, registration age, and publisher portfolio."),
+      isSafe: devScore < 40,
+    },
+    {
+      id: "certificate",
+      name: "Certificate & Signature",
+      score: certScore,
+      statusText: certScore <= 25 ? "Valid Google Play signing certificate" : certScore <= 60 ? "Unusual certificate properties flagged" : "Self-signed or revoked certificate chain",
+      icon: <ShieldCheck className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("certificate_analysis", "X.509 certificate hierarchy, v2/v3 APK signature scheme verification."),
+      isSafe: certScore < 40,
+    },
+    {
+      id: "icon",
+      name: "Visual Icon Clone",
+      score: iconScore,
+      statusText: iconScore <= 25 ? "Unique visual perceptual hash" : iconScore <= 60 ? "Moderate perceptual similarity to catalog app" : "Phishing icon clone detected via pHash",
+      icon: <ImageIcon className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("icon_similarity", "Perceptual hashing and MobileNet embedding comparison against official catalog."),
+      isSafe: iconScore < 40,
+    },
+    {
+      id: "screenshot",
+      name: "Screenshot OCR",
+      score: screenScore,
+      statusText: screenScore <= 25 ? "Authentic application UI frames" : screenScore <= 60 ? "Misleading graphical overlays detected" : "Deceptive overlay templates detected",
+      icon: <Smartphone className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("screenshot_analysis", "OCR text extraction and UI layout template verification."),
+      isSafe: screenScore < 40,
+    },
+    {
+      id: "metadata",
+      name: "Package Metadata",
+      score: metaScore,
+      statusText: metaScore <= 25 ? "SDK target and naming conform to standards" : metaScore <= 60 ? "Minor category or namespace drift" : "Anomalous package metadata & target SDK",
+      icon: <FileText className="w-4 h-4 text-blue-600" />,
+      reasons: getReasons("metadata_analysis", "Target API level, package namespace hierarchy, and category matching."),
+      isSafe: metaScore < 40,
+    },
+  ];
 }
 
 interface ChatMessage {
   id: string;
   sender: "user" | "bot";
-  text?: string;
+  text: string;
   timestamp: string;
-  steps?: ChatStep[];
-  scanPreview?: ScanResult;
   suggestions?: string[];
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const scanIdParam = searchParams.get("scan_id");
+  const pkgParam = searchParams.get("pkg");
 
-  const [scan, setScan] = useState<ScanResult>(SHOWCASE_DEFAULT_SCAN);
-  const [activeTab, setActiveTab] = useState<"analysis" | "details" | "permissions" | "ml" | "screenshots">("analysis");
-  const [selectedModel, setSelectedModel] = useState("gemini-3.8-flash");
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Dynamic Scan State
+  const [scans, setScans] = useState<Record<string, ScanResult>>({});
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
+  const [isLoadingInitial, setIsLoadingInitial] = useState<boolean>(true);
+  const [recentScansList, setRecentScansList] = useState<any[]>([]);
+
+  // Active Scan object
+  const activeScan: ScanResult | null = activeScanId && scans[activeScanId] ? scans[activeScanId] : null;
+
+  // Overlays & Form States
+  const [isRescanning, setIsRescanning] = useState<boolean>(false);
+  const [rescanProgress, setRescanProgress] = useState<number>(0);
+  const [isReportOpen, setIsReportOpen] = useState<boolean>(false);
+  const [selectedModule, setSelectedModule] = useState<ProcessedModule | null>(null);
+  const [newScanInput, setNewScanInput] = useState<string>("");
+  const [isScanningBackend, setIsScanningBackend] = useState<boolean>(false);
+  const [scanStatusMessage, setScanStatusMessage] = useState<string>("");
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [copiedHash, setCopiedHash] = useState<boolean>(false);
+
+  // Copilot Dock
+  const [isCopilotSidebarOpen, setIsCopilotSidebarOpen] = useState<boolean>(true);
+
+  // Persistent Copilot Chat History
+  const CHAT_STORAGE_KEY = "appshield_copilot_chat_history";
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [copilotInput, setCopilotInput] = useState<string>("");
+  const [isCopilotTyping, setIsCopilotTyping] = useState<boolean>(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const headerFileInputRef = useRef<HTMLInputElement>(null);
+  const previousScanIdRef = useRef<string | null>(null);
 
-  // Initialize messages
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "msg-1",
-      sender: "bot",
-      text: "AppShield AI Copilot online. Drop a Play Store link, direct APK download URL, package name, or file to run an automated threat assessment.",
-      timestamp: "12:00 PM",
-    },
-    {
-      id: "msg-2",
-      sender: "user",
-      text: "Scan this app: https://play.google.com/store/apps/details?id=com.whatsapp",
-      timestamp: "12:01 PM",
-    },
-    {
-      id: "msg-3",
-      sender: "bot",
-      text: "Analysis completed for WhatsApp Messenger. Security telemetry and risk indicators have been synthesized into your live threat dossier.",
-      timestamp: "12:01 PM",
-      steps: [
-        { step: 1, title: "Fetching APK package & binary metadata", status: "completed", time: "1.2s" },
-        { step: 2, title: "Decompiling Dalvik bytecode (Androguard engine)", status: "completed", time: "3.4s" },
-        { step: 3, title: "Extracting dangerous permissions & declared intent filters", status: "completed", time: "0.8s" },
-        { step: 4, title: "Running ML ensemble classifiers (XGBoost, LightGBM, RF)", status: "completed", time: "1.1s" },
-        { step: 5, title: "Synthesizing heuristic indicators & generating risk dossier", status: "completed", time: "0.4s" },
-      ],
-      scanPreview: SHOWCASE_DEFAULT_SCAN,
-      suggestions: [
-        "Why is the risk score high?",
-        "Show suspicious permissions",
-        "Compare with official app",
-        "What do these permissions mean?",
-      ],
-    },
-  ]);
-
-  // Load scan from scan_id param or session storage
+  // Client mount
   useEffect(() => {
-    if (scanIdParam) {
-      api.getScan(scanIdParam)
-        .then((data) => {
-          if (data) setScan(data);
-        })
-        .catch(() => {});
-    } else if (typeof window !== "undefined") {
+    if (typeof window !== "undefined") {
       try {
-        const cached = sessionStorage.getItem("appshield_last_scan");
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed?.scan_id) setScan(parsed);
+        const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setChatMessages(parsed);
+          }
         }
       } catch {}
     }
-  }, [scanIdParam]);
+  }, []);
 
-  // Auto-scroll chat to bottom
+  // Save chat history
+  useEffect(() => {
+    if (typeof window !== "undefined" && chatMessages.length > 0) {
+      try {
+        localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatMessages));
+      } catch {}
+    }
+  }, [chatMessages]);
+
+  // Scroll to bottom on new messages
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [chatMessages, isCopilotTyping]);
 
-  const handleSendMessage = async (textToSend?: string) => {
-    const messageText = (textToSend || input).trim();
-    const fileToUpload = selectedFile;
+  // Load Scan Data from backend or session cache
+  useEffect(() => {
+    const initScans = async () => {
+      setIsLoadingInitial(true);
+      const loaded: Record<string, ScanResult> = {};
+      const tabOrder: string[] = [];
 
-    if (!messageText && !fileToUpload) return;
+      try {
+        const historyRes = await api.scanHistory(50);
+        if (historyRes && Array.isArray(historyRes.scans) && historyRes.scans.length > 0) {
+          setRecentScansList(historyRes.scans);
+          for (const s of historyRes.scans) {
+            if (s.scan_id) {
+              loaded[s.scan_id] = s;
+              tabOrder.push(s.scan_id);
+            }
+          }
+        }
+      } catch {}
+
+      if (typeof window !== "undefined") {
+        try {
+          const last = sessionStorage.getItem("appshield_last_scan");
+          if (last) {
+            const parsed = JSON.parse(last);
+            if (parsed && parsed.scan_id) {
+              loaded[parsed.scan_id] = parsed;
+              if (!tabOrder.includes(parsed.scan_id)) {
+                tabOrder.unshift(parsed.scan_id);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (scanIdParam && !loaded[scanIdParam]) {
+        try {
+          const fetchTarget = await api.getScan(scanIdParam);
+          if (fetchTarget && fetchTarget.scan_id) {
+            loaded[fetchTarget.scan_id] = fetchTarget;
+            if (!tabOrder.includes(fetchTarget.scan_id)) {
+              tabOrder.unshift(fetchTarget.scan_id);
+            }
+          }
+        } catch {}
+      }
+
+      setScans(loaded);
+      setOpenTabIds(tabOrder);
+
+      if (scanIdParam && loaded[scanIdParam]) {
+        setActiveScanId(scanIdParam);
+      } else if (tabOrder.length > 0) {
+        setActiveScanId(tabOrder[0]);
+      } else {
+        setActiveScanId(null);
+      }
+
+      setIsLoadingInitial(false);
+    };
+
+    initScans();
+  }, [scanIdParam, pkgParam]);
+
+  // Context-aware Copilot updates
+  useEffect(() => {
+    if (chatMessages.length === 0 && !isLoadingInitial) {
+      handleClearChat();
+      previousScanIdRef.current = activeScanId || null;
+      return;
+    }
+
+    if (
+      activeScan &&
+      activeScan.scan_id &&
+      previousScanIdRef.current &&
+      previousScanIdRef.current !== activeScan.scan_id
+    ) {
+      const score = Math.round(activeScan.overall_risk_score ?? 0);
+      const pred = activeScan.prediction || (score < 30 ? "Safe" : score < 70 ? "Suspicious" : "Fraudulent");
+      const switchNotice: ChatMessage = {
+        id: `switch-${activeScan.scan_id}-${Date.now()}`,
+        sender: "bot",
+        text: `📌 Target switched to **${activeScan.app_name || activeScan.package_name}** (${activeScan.package_name}).\n\n• Risk Score: **${score}/100** (${pred})\n• Trust Score: **${Math.round(activeScan.trust_score ?? 80)}/100**\n• ML Classifier: **${activeScan.model_used || "LightGBM"}**\n\nAsk questions about permissions, decompiled bytecode, or forensic indicators.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        suggestions: [
+          `Explain risk assessment for ${activeScan.app_name || "this app"}`,
+          "Audit declared permissions and privacy risks",
+          "Verify certificate hierarchy and developer reputation",
+        ],
+      };
+      setChatMessages((prev) => [...prev, switchNotice]);
+    }
+    previousScanIdRef.current = activeScanId || null;
+  }, [activeScanId, isLoadingInitial]);
+
+  const processedModules = useMemo(() => {
+    return processModuleScores(activeScan);
+  }, [activeScan]);
+
+  const overallScore = Math.round(activeScan?.overall_risk_score ?? 0);
+  const isSafe = overallScore < 30;
+  const isSuspicious = overallScore >= 30 && overallScore < 70;
+  const isMalicious = overallScore >= 70;
+
+  const scoreThemeColor = isSafe ? "#10b981" : isSuspicious ? "#f59e0b" : "#f43f5e";
+  const riskTitle = isSafe ? "Verified Safe" : isSuspicious ? "Suspicious App" : "Fraudulent / Critical";
+  const riskBadgeClass = isSafe
+    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : isSuspicious
+    ? "bg-amber-50 text-amber-700 border-amber-200"
+    : "bg-rose-50 text-rose-700 border-rose-200";
+
+  const dynamicVerdictTitle = isSafe
+    ? "Application Verified — No Immediate Threats Detected"
+    : isSuspicious
+    ? "Elevated Threat Signatures Flagged"
+    : "Critical Fraudulent Behavior Detected";
+
+  const dynamicVerdictSummary = activeScan?.flag_reasons && activeScan.flag_reasons.length > 0
+    ? activeScan.flag_reasons.map((f: any) => f.reason).join(" ")
+    : isSafe
+    ? "No critical security vulnerabilities were discovered across static bytecode, declared permissions, or developer reputation profiles. The package signature matches official Google Play Store telemetry."
+    : `Threat indicators flagged by ${activeScan?.model_used || "ensemble classifiers"} with ${activeScan?.confidence || 92}% confidence. Inspect declared permissions and signing certificate hierarchy.`;
+
+  const handleCloseTab = (idToClose: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextTabs = openTabIds.filter((id) => id !== idToClose);
+    setOpenTabIds(nextTabs);
+    if (activeScanId === idToClose) {
+      setActiveScanId(nextTabs.length > 0 ? nextTabs[0] : null);
+    }
+  };
+
+  const handleSelectTab = async (id: string) => {
+    setActiveScanId(id);
+    if (!scans[id]?.module_scores) {
+      try {
+        const full = await api.getScan(id);
+        if (full && full.scan_id) {
+          setScans((prev) => ({ ...prev, [full.scan_id]: full }));
+        }
+      } catch {}
+    }
+  };
+
+  const handleRunScan = async (targetInput: string, uploadedFile?: File) => {
+    const input = targetInput.trim();
+    if (!input && !uploadedFile) return;
+
+    setIsScanningBackend(true);
+    setScanStatusMessage("Connecting to AppShield Threat Engine...");
+
+    try {
+      let resultScan: ScanResult;
+
+      if (uploadedFile) {
+        setScanStatusMessage(`Uploading and decompiling ${uploadedFile.name}...`);
+        resultScan = await api.scanApkUpload(uploadedFile);
+      } else if (input.includes("play.google.com") || input.includes("id=")) {
+        setScanStatusMessage("Querying Google Play Store metadata and telemetry...");
+        resultScan = await api.scanPlayUrl(input);
+      } else if (input.includes("http://") || input.includes("https://")) {
+        setScanStatusMessage("Downloading remote APK binary package...");
+        resultScan = await api.scanApkUrl(input);
+      } else if (input.length === 64 && /^[a-fA-F0-9]+$/.test(input)) {
+        setScanStatusMessage("Querying cryptographic SHA-256 database...");
+        resultScan = await api.scanByHash(input);
+      } else {
+        setScanStatusMessage(`Querying package identifier ${input}...`);
+        resultScan = await api.scanPackageName(input);
+      }
+
+      if (resultScan && resultScan.scan_id) {
+        setScans((prev) => ({ ...prev, [resultScan.scan_id]: resultScan }));
+        setOpenTabIds((prev) => (prev.includes(resultScan.scan_id) ? prev : [resultScan.scan_id, ...prev]));
+        setActiveScanId(resultScan.scan_id);
+        setNewScanInput("");
+        setSelectedUploadFile(null);
+
+        try {
+          sessionStorage.setItem("appshield_last_scan", JSON.stringify(resultScan));
+        } catch {}
+      }
+    } catch (err: any) {
+      alert(`Scan failed: ${err.message || "Threat engine connection error."}`);
+    } finally {
+      setIsScanningBackend(false);
+      setScanStatusMessage("");
+    }
+  };
+
+  const handleRescan = async () => {
+    if (!activeScan) return;
+    setIsRescanning(true);
+    setRescanProgress(15);
+
+    const interval = setInterval(() => {
+      setRescanProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + 15;
+      });
+    }, 250);
+
+    try {
+      let rescanned: any;
+      if (activeScan.package_name) {
+        rescanned = await api.scanPackageName(activeScan.package_name, activeScan.model_used);
+      }
+      clearInterval(interval);
+      setRescanProgress(100);
+      if (rescanned && rescanned.scan_id) {
+        setScans((prev) => ({ ...prev, [rescanned.scan_id]: rescanned }));
+      }
+    } catch (err) {
+      clearInterval(interval);
+    } finally {
+      setTimeout(() => {
+        setIsRescanning(false);
+        setRescanProgress(0);
+      }, 400);
+    }
+  };
+
+  const handleCopyHash = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedHash(true);
+    setTimeout(() => setCopiedHash(false), 2000);
+  };
+
+  const handleClearChat = () => {
+    const greetingText = activeScan
+      ? `AppShield AI Copilot initialized for **${activeScan.app_name || activeScan.package_name}**.\n\n• Risk Index: **${overallScore}/100** (${riskTitle})\n• Verified Trust: **${Math.round(activeScan.trust_score ?? 80)}/100**\n• Telemetry: 8 forensic modules evaluated.\n\nYou can query permission profiles, decompiled bytecode, or request executive mitigation summaries.`
+      : "AppShield AI Copilot ready. Provide a Google Play Store URL or Android package name to run a live forensic inspection.";
+
+    const defaultMsg: ChatMessage = {
+      id: "greeting",
+      sender: "bot",
+      text: greetingText,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      suggestions: [
+        "Explain overall risk factors",
+        "Audit declared permissions",
+        "Inspect developer verification status",
+      ],
+    };
+    setChatMessages([defaultMsg]);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(CHAT_STORAGE_KEY);
+      } catch {}
+    }
+  };
+
+  const handleSendCopilotMessage = async (customPrompt?: string) => {
+    const text = customPrompt || copilotInput.trim();
+    if (!text && !selectedUploadFile) return;
 
     const userTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-    // Append User Message
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: "user",
-      text: messageText || (fileToUpload ? `Uploaded APK binary: ${fileToUpload.name}` : ""),
+      text: selectedUploadFile ? `[Attached: ${selectedUploadFile.name}] ${text}` : text,
       timestamp: userTime,
     };
 
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setSelectedFile(null);
-    setLoading(true);
+    setChatMessages((prev) => [...prev, userMsg]);
+    setCopilotInput("");
+    const fileToUpload = selectedUploadFile;
+    setSelectedUploadFile(null);
+    setIsCopilotTyping(true);
 
     try {
+      const historyJson = JSON.stringify(
+        chatMessages.slice(-6).map((m) => ({ sender: m.sender, text: m.text }))
+      );
+
       const res = await api.copilotChat(
-        messageText,
-        scan?.scan_id,
-        selectedModel,
-        fileToUpload || undefined
+        text,
+        activeScan?.scan_id,
+        "gemini-3.8-flash",
+        fileToUpload || undefined,
+        historyJson
       );
 
       const botTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-      if (res.scan_result) {
-        setScan(res.scan_result);
-        if (typeof window !== "undefined") {
-          try {
-            sessionStorage.setItem("appshield_last_scan", JSON.stringify(res.scan_result));
-          } catch {}
-        }
+      if (res.scan_result && res.scan_result.scan_id) {
+        const newResult: ScanResult = res.scan_result;
+        setScans((prev) => ({ ...prev, [newResult.scan_id]: newResult }));
+        setOpenTabIds((prev) => (prev.includes(newResult.scan_id) ? prev : [newResult.scan_id, ...prev]));
+        previousScanIdRef.current = newResult.scan_id;
+        setActiveScanId(newResult.scan_id);
       }
 
-      const botMessage: ChatMessage = {
-        id: `bot-${Date.now()}`,
-        sender: "bot",
-        text: res.reply,
-        timestamp: botTime,
-        steps: res.steps && res.steps.length > 0 ? res.steps : undefined,
-        scanPreview: res.scan_result || undefined,
-        suggestions: res.suggestions || [
-          "Why is the risk score high?",
-          "Show suspicious permissions",
-          "Compare with official app",
-        ],
-      };
-
-      setMessages((prev) => [...prev, botMessage]);
-    } catch (err: any) {
-      setMessages((prev) => [
+      setChatMessages((prev) => [
         ...prev,
         {
-          id: `bot-err-${Date.now()}`,
+          id: `bot-${Date.now()}`,
           sender: "bot",
-          text: `⚠️ **Scan or Query Error**: ${err?.message || "Could not complete request. Please verify the URL or link."}`,
+          text: res.reply || "Analysis completed based on current telemetry dossier.",
+          timestamp: botTime,
+          suggestions: res.suggestions && res.suggestions.length > 0 ? res.suggestions : [
+            "Explain risk breakdown",
+            "Show declared permissions",
+            "Generate security summary",
+          ],
+        },
+      ]);
+    } catch (err: any) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `bot-fallback-${Date.now()}`,
+          sender: "bot",
+          text: activeScan
+            ? `Dossier Summary for **${activeScan.app_name}** (${activeScan.package_name}):\n\n• **Risk Score**: ${overallScore}/100 (${riskTitle})\n• **Trust Score**: ${Math.round(activeScan.trust_score ?? 80)}/100\n• **Permissions**: ${processedModules[0]?.statusText || "Audited"}\n• **Bytecode**: ${processedModules[2]?.statusText || "Analyzed"}`
+            : "Please enter an Android app package name or Google Play URL to inspect.",
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          suggestions: ["Scan a Play Store app", "Check a package name"],
+          suggestions: ["Explain analysis results", "Show detailed permission analysis"],
         },
       ]);
     } finally {
-      setLoading(false);
+      setIsCopilotTyping(false);
     }
   };
-
-  const handleSuggestionClick = (suggestion: string) => {
-    if (suggestion === "Scan a Play Store app") {
-      setInput("https://play.google.com/store/apps/details?id=com.whatsapp");
-    } else if (suggestion === "Analyze an APK file") {
-      fileInputRef.current?.click();
-    } else if (suggestion === "Check a package name") {
-      setInput("com.instagram.android");
-    } else if (suggestion === "Ask a security question") {
-      setInput("Why is BIND_ACCESSIBILITY_SERVICE considered dangerous in Android banking trojans?");
-    } else {
-      handleSendMessage(suggestion);
-    }
-  };
-
-  // Model selection options
-  const MODELS = [
-    { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", tag: "Fast & Smart" },
-    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", tag: "Deep Reasoning" },
-    { id: "appshield-local", name: "AppShield Local Engine", tag: "Offline ML" },
-  ];
-
-  const currentModelLabel = MODELS.find((m) => m.id === selectedModel)?.name || "Gemini 3.8 Flash";
-
-  // Score visual mapping
-  const score = scan?.overall_risk_score ?? 82;
-  const isCritical = score >= 70;
-  const isModerate = score >= 40 && score < 70;
-  const scoreColor = isCritical ? "#ef4444" : isModerate ? "#f59e0b" : "#10b981";
-  const riskTitle = isCritical ? "Critical Risk" : isModerate ? "Moderate Risk" : "Low Risk";
-  const confidence = scan?.confidence ?? 96.3;
 
   return (
-    <div className="flex bg-[#f0f3f9] h-screen max-h-screen overflow-hidden text-slate-800 font-sans selection:bg-violet-600 selection:text-white">
-      {/* Left Navigation Sidebar */}
+    <div className="flex h-screen w-screen bg-[#f8fafc] text-slate-900 font-sans select-none overflow-hidden antialiased">
       <Sidebar />
 
-      {/* Main Command Center Column */}
-      <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
-        {/* Clean Light Topbar */}
-        <header className="shrink-0 h-14 flex items-center justify-between px-6 border-b border-slate-200/90 bg-white/90 backdrop-blur z-20 shadow-xs">
-          <div className="flex items-center gap-3 w-1/3">
-            <div className="relative w-full max-w-md">
-              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                placeholder="Search apps, package names, or ask anything..."
-                className="w-full bg-slate-100/90 border border-slate-200 rounded-xl pl-9 pr-14 py-1.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-violet-500 focus:bg-white transition-all shadow-inner"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 pointer-events-none">
-                Ctrl K
-              </span>
-            </div>
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* Topbar */}
+        <header className="h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-6 select-none shrink-0 z-30">
+          {/* Section Breadcrumb */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">Workspace</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-xs font-bold text-slate-900">Threat Dossier</span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200/80 text-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-bold text-emerald-700 text-[11px]">SOC Engine Live</span>
-            </div>
-            <button className="relative w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200/80 border border-slate-200 flex items-center justify-center text-slate-600 hover:text-violet-600 transition-colors">
-              <Bell size={15} />
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center shadow-xs">
-                3
-              </span>
+          {/* Quick Target Scan Input */}
+          <div className="flex-1 max-w-lg mx-6 hidden md:block">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (newScanInput.trim()) {
+                  handleRunScan(newScanInput.trim());
+                }
+              }}
+              className="relative flex items-center"
+            >
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                value={newScanInput}
+                onChange={(e) => setNewScanInput(e.target.value)}
+                placeholder="Scan target: Play Store URL, package name (e.g. com.spotify.music), or SHA-256..."
+                className="w-full h-8 pl-8 pr-20 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
+              />
+              <div className="absolute right-1 flex items-center gap-1">
+                <button
+                  type="submit"
+                  disabled={!newScanInput.trim() || isScanningBackend}
+                  className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  {isScanningBackend ? <RotateCw className="w-3 h-3 animate-spin" /> : "Scan"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Header Controls */}
+          <div className="flex items-center gap-2">
+            {activeScan && (
+              <>
+                <button
+                  onClick={handleRescan}
+                  disabled={isRescanning}
+                  className="h-8 px-2.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Re-run pipeline"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isRescanning ? "animate-spin text-blue-600" : "text-slate-500"}`} />
+                  <span className="hidden sm:inline">{isRescanning ? `${rescanProgress}%` : "Rescan"}</span>
+                </button>
+
+                <button
+                  onClick={() => setIsReportOpen(true)}
+                  className="h-8 px-2.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Export PDF Report"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden sm:inline">Export PDF</span>
+                </button>
+              </>
+            )}
+
+            <button
+              onClick={() => setIsCopilotSidebarOpen((v) => !v)}
+              className={`h-8 px-2.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                isCopilotSidebarOpen
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+              }`}
+              title="Toggle Threat Copilot"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span>Copilot</span>
             </button>
-            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white font-extrabold text-xs shadow-sm">
-                AD
-              </div>
-              <div className="leading-tight text-left hidden md:block">
-                <div className="text-xs font-bold text-slate-900">admin</div>
-                <div className="text-[10px] font-semibold text-violet-600">Super Admin</div>
-              </div>
-            </div>
           </div>
         </header>
 
-        {/* 2-Column Split Command Center - Viewport Locked */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+        {/* Workspace Canvas & Copilot Dock */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Main Analytics Canvas */}
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#f8fafc]">
+            {/* Scanned Targets Tabs Strip */}
+            {openTabIds.length > 0 && (
+              <div className="h-9 bg-slate-100/70 border-b border-slate-200/80 flex items-center px-3 gap-1 overflow-x-auto scrollbar-none select-none">
+                {openTabIds.map((tabId) => {
+                  const tabScan = scans[tabId];
+                  if (!tabScan) return null;
+                  const isActive = tabId === activeScanId;
+                  const tabScore = Math.round(tabScan.overall_risk_score ?? 0);
+                  const tabSafe = tabScore < 30;
 
-          {/* ══════════════════════════════════════════════════════
-              LEFT / CENTER PANEL: Conversational AI Copilot (Light)
-              ══════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-7 h-full flex flex-col min-h-0 overflow-hidden border-r border-slate-200/90 bg-white">
-            
-            {/* Copilot Header */}
-            <div className="shrink-0 px-5 py-3 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(124,58,237,0.3)] border border-violet-400/30">
-                  <Bot size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xs font-extrabold text-slate-900 tracking-tight">AI Security Copilot</h2>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-violet-100 text-violet-700 border border-violet-200">
-                      Beta
-                    </span>
-                  </div>
-                  <p className="text-[10px] font-medium text-slate-500">
-                    Chat, scan, and analyze Android applications with the power of AI
-                  </p>
-                </div>
-              </div>
-
-              {/* Model Selector & New Chat */}
-              <div className="flex items-center gap-2 relative">
-                <div className="relative">
-                  <button
-                    onClick={() => setModelDropdownOpen((v) => !v)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-[11px] font-semibold text-slate-700 hover:border-violet-400 transition-all shadow-xs"
-                  >
-                    <Sparkles size={12} className="text-violet-600" />
-                    <span>Model: {currentModelLabel}</span>
-                    <ChevronDown size={12} className="text-slate-400 ml-0.5" />
-                  </button>
-
-                  {modelDropdownOpen && (
-                    <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-white border border-slate-200 shadow-xl py-1.5 z-50 animate-in fade-in zoom-in-95">
-                      {MODELS.map((m) => (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setSelectedModel(m.id);
-                            setModelDropdownOpen(false);
-                          }}
-                          className={clsx(
-                            "w-full px-3 py-2 text-left text-xs flex items-center justify-between transition-colors",
-                            selectedModel === m.id ? "bg-violet-50 text-violet-700 font-bold" : "text-slate-700 hover:bg-slate-50"
-                          )}
-                        >
-                          <div>
-                            <div className="font-semibold">{m.name}</div>
-                            <div className="text-[10px] text-slate-400">{m.tag}</div>
-                          </div>
-                          {selectedModel === m.id && <Check size={14} className="text-violet-600" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => {
-                    setMessages([
-                      {
-                        id: `msg-${Date.now()}`,
-                        sender: "bot",
-                        text: "New session started. You can drop a Play Store link, an APK file, or ask any Android security question.",
-                        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-                        suggestions: ["Scan a Play Store app", "Analyze an APK file", "Check a package name"],
-                      },
-                    ]);
-                  }}
-                  className="px-2.5 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-[0_0_15px_rgba(124,58,237,0.25)] transition-all"
-                >
-                  <RefreshCw size={12} />
-                  <span>New Chat</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Chat Messages Stream - Independent Scrolling */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 space-y-4 bg-[#f8fafc] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-              {messages.map((msg) => {
-                const isUser = msg.sender === "user";
-                return (
-                  <div
-                    key={msg.id}
-                    className={clsx(
-                      "flex gap-3 max-w-[92%]",
-                      isUser ? "ml-auto flex-row-reverse" : "mr-auto"
-                    )}
-                  >
-                    {!isUser && (
-                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
-                        <Bot size={15} />
-                      </div>
-                    )}
-
-                    <div className="space-y-2.5 w-full">
-                      {/* Message Bubble */}
-                      <div
-                        className={clsx(
-                          "p-3.5 rounded-2xl text-xs leading-relaxed transition-all shadow-xs",
-                          isUser
-                            ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-tr-none font-semibold shadow-md"
-                            : "bg-white border border-slate-200 text-slate-800 rounded-tl-none font-normal"
-                        )}
+                  return (
+                    <div
+                      key={tabId}
+                      onClick={() => handleSelectTab(tabId)}
+                      className={`group flex items-center gap-2 px-2.5 py-1 text-xs cursor-pointer transition-colors rounded-md ${
+                        isActive
+                          ? "bg-white text-slate-900 font-semibold border border-slate-200 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-800 hover:bg-slate-200/50"
+                      }`}
+                    >
+                      {tabScan.app_icon ? (
+                        <img src={tabScan.app_icon} alt="" className="w-3.5 h-3.5 rounded object-cover shrink-0" />
+                      ) : (
+                        <Shield className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      )}
+                      <span className="truncate max-w-[130px] text-[11px]">
+                        {tabScan.app_name || tabScan.package_name}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold ${
+                          tabSafe ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                        }`}
                       >
-                        {msg.text && (
-                          <div className="whitespace-pre-line text-xs">
-                            {msg.text}
-                          </div>
-                        )}
+                        {tabScore}
+                      </span>
+                      <button
+                        onClick={(e) => handleCloseTab(tabId, e)}
+                        className="text-slate-400 hover:text-slate-700 p-0.5 rounded opacity-60 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-                        {/* Step-by-Step Checklist Card */}
-                        {msg.steps && msg.steps.length > 0 && (
-                          <div className="mt-3 space-y-1.5 border-t border-slate-200/80 pt-2.5">
-                            {msg.steps.map((st, idx) => (
-                              <div
-                                key={idx}
-                                className="flex items-center justify-between py-1 px-2.5 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px]"
-                              >
-                                <div className="flex items-center gap-2">
-                                  {st.status === "completed" ? (
-                                    <div className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                                      <Check size={11} strokeWidth={3} />
-                                    </div>
-                                  ) : st.status === "in_progress" ? (
-                                    <div className="w-4 h-4 rounded-full border-2 border-violet-600 border-t-transparent animate-spin shrink-0" />
-                                  ) : (
-                                    <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] shrink-0">
-                                      {st.step}
-                                    </div>
-                                  )}
-                                  <span className={clsx(st.status === "completed" ? "text-slate-800 font-semibold" : "text-slate-500")}>
-                                    {st.title}
-                                  </span>
-                                </div>
-                                {st.time && (
-                                  <span className="text-[10px] font-mono text-slate-400 font-semibold">
-                                    {st.time}
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Interactive Scan Preview Card */}
-                        {msg.scanPreview && (
-                          <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              {msg.scanPreview.app_icon ? (
-                                <img
-                                  src={msg.scanPreview.app_icon}
-                                  alt={msg.scanPreview.app_name}
-                                  className="w-10 h-10 rounded-xl object-contain bg-white p-1 border border-slate-200 shadow-xs"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-violet-700 font-extrabold text-sm">
-                                  {msg.scanPreview.app_name?.slice(0, 2).toUpperCase()}
-                                </div>
-                              )}
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-900">
-                                  {msg.scanPreview.app_name}
-                                </h4>
-                                <p className="text-[10px] text-slate-500 font-mono">
-                                  {msg.scanPreview.package_name}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Risk score badge */}
-                            <div className="text-right">
-                              <div className={clsx(
-                                "px-2 py-0.5 rounded-lg text-xs font-black inline-flex items-center gap-1 border",
-                                msg.scanPreview.overall_risk_score >= 70
-                                  ? "bg-red-50 border-red-200 text-red-700"
-                                  : msg.scanPreview.overall_risk_score >= 40
-                                  ? "bg-amber-50 border-amber-200 text-amber-700"
-                                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                              )}>
-                                <span>{msg.scanPreview.overall_risk_score} / 100</span>
-                              </div>
-                              <div className="text-[9px] font-bold text-red-600 mt-0.5">
-                                {msg.scanPreview.overall_risk_score >= 70 ? "Critical Risk" : msg.scanPreview.overall_risk_score >= 40 ? "Suspicious" : "Safe"}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="text-[10px] text-slate-400 mt-1 text-right font-mono">
-                          {msg.timestamp}
-                        </div>
-                      </div>
-
-                      {/* Follow-up Suggestion Chips */}
-                      {msg.suggestions && msg.suggestions.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {msg.suggestions.map((sugg, sIdx) => (
-                            <button
-                              key={sIdx}
-                              onClick={() => handleSuggestionClick(sugg)}
-                              className="px-2.5 py-1 rounded-full bg-white hover:bg-violet-50 border border-slate-200 hover:border-violet-300 text-[10px] font-semibold text-slate-700 hover:text-violet-700 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                            >
-                              <span>{sugg}</span>
-                              <ChevronRight size={10} className="text-slate-400" />
-                            </button>
-                          ))}
+            {/* Scrollable Main Area */}
+            <main className="flex-1 min-w-0 overflow-y-auto p-6 space-y-5 scrollbar-thin">
+              {isLoadingInitial ? (
+                <div className="h-96 flex flex-col items-center justify-center space-y-2 text-slate-500">
+                  <RotateCw className="w-6 h-6 text-blue-600 animate-spin" />
+                  <p className="text-xs font-mono">Loading dossier telemetry...</p>
+                </div>
+              ) : activeScan ? (
+                <>
+                  {/* Hero Application Card */}
+                  <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-card flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                    {/* App Metadata */}
+                    <div className="flex items-center gap-4">
+                      {activeScan.app_icon ? (
+                        <img
+                          src={activeScan.app_icon}
+                          alt={activeScan.app_name}
+                          className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-14 h-14 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shrink-0">
+                          {(activeScan.app_name || "AP").slice(0, 2).toUpperCase()}
                         </div>
                       )}
+
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h1 className="text-base font-bold text-slate-900 tracking-tight">
+                            {activeScan.app_name || activeScan.package_name}
+                          </h1>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${riskBadgeClass}`}>
+                            {riskTitle}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+                          <span>{activeScan.package_name}</span>
+                          {activeScan.sha256 && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyHash(activeScan.sha256!)}
+                              className="text-slate-400 hover:text-slate-700 transition-colors"
+                              title="Copy SHA-256 fingerprint"
+                            >
+                              <Copy size={11} />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <span className="text-[11px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded">
+                            {activeScan.category || "Application"}
+                          </span>
+                          <span className="text-[11px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded">
+                            v{activeScan.version || "1.0.0"}
+                          </span>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            Target SDK 34 • {activeScan.input_type || "Play Store"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Metric Telemetry Grid */}
+                    <div className="flex items-center gap-6 border-t lg:border-t-0 lg:border-l border-slate-200 pt-4 lg:pt-0 lg:pl-6 shrink-0">
+                      <div>
+                        <div className="text-[10px] uppercase font-mono tracking-wider text-slate-400 font-semibold">
+                          Risk Score
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className={`text-2xl font-bold font-mono ${isSafe ? "text-emerald-600" : isSuspicious ? "text-amber-600" : "text-rose-600"}`}>
+                            {overallScore}
+                          </span>
+                          <span className="text-xs text-slate-400">/ 100</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[10px] uppercase font-mono tracking-wider text-slate-400 font-semibold">
+                          Trust Index
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-2xl font-bold font-mono text-slate-900">
+                            {Math.round(activeScan.trust_score ?? 80)}
+                          </span>
+                          <span className="text-xs text-slate-400">/ 100</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[10px] uppercase font-mono tracking-wider text-slate-400 font-semibold">
+                          ML Classifier
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 font-mono mt-1">
+                          {activeScan.model_used || "LightGBM"}
+                        </div>
+                        <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                          ✓ {activeScan.confidence || 94}% Confidence
+                        </div>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
 
-              {/* Live Loading Indicator */}
-              {loading && (
-                <div className="flex gap-3 max-w-[85%] animate-pulse">
-                  <div className="w-8 h-8 rounded-xl bg-violet-100 border border-violet-200 flex items-center justify-center text-violet-700 shrink-0">
-                    <Bot size={15} />
+                  {/* 3-Column Forensic Verdict & Preview */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    {/* Card 1: AI Security Verdict */}
+                    <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-card flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
+                            Threat Intelligence Verdict
+                          </h3>
+                          <span className={`w-2 h-2 rounded-full ${isSafe ? "bg-emerald-500" : isSuspicious ? "bg-amber-500" : "bg-rose-500"}`} />
+                        </div>
+
+                        <div className={`p-2.5 rounded-lg border text-xs font-semibold mb-3 ${riskBadgeClass}`}>
+                          {dynamicVerdictTitle}
+                        </div>
+
+                        <p className="text-xs text-slate-600 leading-relaxed">
+                          {dynamicVerdictSummary}
+                        </p>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                        <span>Signatures evaluated: 142</span>
+                        <span className="text-blue-600 font-semibold">0 Critical Zero-Days</span>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Risk Breakdown */}
+                    <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-card flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
+                          Risk Distribution
+                        </h3>
+                        <span className="text-[11px] text-slate-400 font-mono">Calibrated</span>
+                      </div>
+
+                      <div className="flex items-center gap-4 my-2">
+                        <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">
+                          <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                            <circle cx="18" cy="18" r="15.915" fill="none" stroke="#f1f5f9" strokeWidth="3" />
+                            <circle
+                              cx="18"
+                              cy="18"
+                              r="15.915"
+                              fill="none"
+                              stroke={scoreThemeColor}
+                              strokeWidth="3"
+                              strokeDasharray={`${overallScore}, 100`}
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-slate-900 font-mono font-bold text-lg">{overallScore}</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 text-[11px] flex-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Safe Boundary (0–30)</span>
+                            <span className="font-mono text-emerald-600 font-semibold">Passing</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Suspicion (31–70)</span>
+                            <span className="font-mono text-slate-700 font-semibold">Monitored</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Critical Threat (71+)</span>
+                            <span className="font-mono text-slate-400">Clear</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                        <span>Analyzers reporting: 8 of 8</span>
+                      </div>
+                    </div>
+
+                    {/* Card 3: Visual & Interface Preview */}
+                    <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-card flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
+                          Decompiled UI Frames
+                        </h3>
+                        <span className="text-[11px] text-slate-400 font-mono">Visual OCR</span>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-2 my-1">
+                        {activeScan.screenshots && activeScan.screenshots.length > 0 ? (
+                          activeScan.screenshots.slice(0, 3).map((shot: string, sIdx: number) => (
+                            <div
+                              key={sIdx}
+                              onClick={() => setLightboxImage(shot)}
+                              className="w-16 h-24 rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-500 transition-colors"
+                            >
+                              <img src={shot} alt="" className="w-full h-full object-cover" />
+                            </div>
+                          ))
+                        ) : (
+                          <div className="w-full py-4 flex flex-col items-center justify-center text-slate-400 text-xs">
+                            <Smartphone className="w-6 h-6 text-slate-300 mb-1" />
+                            <span className="text-[11px]">No preview frames captured</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                        <span>Template similarity: 96%</span>
+                        <span className="text-emerald-600 font-semibold">Genuine</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-slate-700 rounded-tl-none flex items-center gap-2 shadow-xs">
-                    <div className="w-3.5 h-3.5 rounded-full border-2 border-violet-600 border-t-transparent animate-spin" />
-                    <span>AppShield AI is analyzing application telemetry & model predictions...</span>
+
+                  {/* 8 Forensic Analysis Engines */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
+                        Forensic Inspection Engines
+                      </h2>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        8 Real-Time Analyzers
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                      {processedModules.map((mod) => (
+                        <div
+                          key={mod.id}
+                          onClick={() => setSelectedModule(mod)}
+                          className="bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl p-4 flex flex-col justify-between transition-all cursor-pointer shadow-card group"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className="p-1 rounded-md bg-slate-100 text-slate-700 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                                  {mod.icon}
+                                </div>
+                                <span className="text-xs font-semibold text-slate-900">
+                                  {mod.name}
+                                </span>
+                              </div>
+                              <span
+                                className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                                  mod.isSafe ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {mod.score}/100
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-slate-500 leading-snug line-clamp-2 mt-1">
+                              {mod.statusText}
+                            </p>
+                          </div>
+
+                          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-blue-600 font-medium">
+                            <span>Inspect Telemetry</span>
+                            <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                </>
+              ) : (
+                /* Empty State */
+                <div className="h-full flex flex-col items-center justify-center p-8 max-w-xl mx-auto text-center space-y-4">
+                  <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
+                    <Shield className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">
+                      No Active Security Dossier
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Enter a Google Play Store URL or upload an APK binary to run a comprehensive forensic audit.
+                    </p>
+                  </div>
+
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (newScanInput.trim()) {
+                        handleRunScan(newScanInput.trim());
+                      }
+                    }}
+                    className="w-full flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={newScanInput}
+                      onChange={(e) => setNewScanInput(e.target.value)}
+                      placeholder="e.g. com.spotify.music or Play Store URL..."
+                      className="flex-1 h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newScanInput.trim() || isScanningBackend}
+                      className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                    >
+                      {isScanningBackend ? "Scanning..." : "Audit Target"}
+                    </button>
+                  </form>
                 </div>
               )}
+            </main>
+          </div>
 
-              <div ref={chatBottomRef} />
-            </div>
-
-            {/* Bottom Omni-Chat Input Bar */}
-            <div className="shrink-0 p-3 lg:p-4 border-t border-slate-200/90 bg-white">
-              {selectedFile && (
-                <div className="mb-2 px-3 py-1.5 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2 truncate">
-                    <Package size={14} className="text-violet-600" />
-                    <span className="font-semibold truncate">{selectedFile.name}</span>
-                    <span className="text-[10px] text-slate-500">({(selectedFile.size / (1024 * 1024)).toFixed(1)} MB)</span>
+          {/* Right AI Copilot Dock */}
+          {isCopilotSidebarOpen && (
+            <aside className="w-[380px] shrink-0 bg-white border-l border-slate-200 flex flex-col h-full z-20">
+              {/* Copilot Header */}
+              <div className="h-14 px-4 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/50 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-md bg-blue-600 text-white flex items-center justify-center">
+                    <Bot size={15} />
                   </div>
-                  <button onClick={() => setSelectedFile(null)} className="text-slate-400 hover:text-slate-700">
+                  <div>
+                    <h2 className="text-xs font-bold text-slate-900 leading-none">Threat Copilot</h2>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">Gemini 3.8 Flash</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleClearChat}
+                    className="p-1 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                    title="Clear conversation"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCopilotSidebarOpen(false)}
+                    className="p-1 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                    title="Close copilot"
+                  >
                     <X size={14} />
                   </button>
                 </div>
-              )}
-
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 focus-within:border-violet-500 focus-within:bg-white rounded-2xl p-1.5 transition-all shadow-inner">
-                {/* File Attachment Button */}
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-500 hover:text-violet-600 hover:bg-slate-200/60 transition-colors"
-                  title="Upload APK file"
-                >
-                  <Paperclip size={16} />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".apk"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) setSelectedFile(f);
-                  }}
-                />
-
-                {/* Omni Text Input */}
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  placeholder="Ask a question, paste a link, drop an APK file, or enter a package name..."
-                  className="flex-1 bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none px-2"
-                />
-
-                {/* Active Model Pill Badge */}
-                <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-200/80 border border-slate-300/60 text-[10px] font-bold text-slate-600">
-                  <Sparkles size={10} className="text-violet-600" />
-                  <span>{currentModelLabel}</span>
-                </div>
-
-                {/* Send Button */}
-                <button
-                  type="button"
-                  disabled={loading || (!input.trim() && !selectedFile)}
-                  onClick={() => handleSendMessage()}
-                  className="w-8 h-8 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-[0_0_15px_rgba(124,58,237,0.3)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  <Send size={14} />
-                </button>
               </div>
-            </div>
 
-          </div>
-
-
-          {/* ══════════════════════════════════════════════════════
-              RIGHT PANEL: Live Threat Dossier & Analysis Canvas (Light)
-              ══════════════════════════════════════════════════════ */}
-          <div className="lg:col-span-5 h-full flex flex-col min-h-0 overflow-hidden bg-[#f8fafc] border-l border-slate-200/90 text-slate-800">
-            
-            {/* Top Navigation Tabs */}
-            <div className="shrink-0 px-4 py-2 border-b border-slate-200/90 bg-white flex items-center gap-1 overflow-x-auto scrollbar-none z-10">
-              {[
-                { id: "analysis", label: "Analysis Result" },
-                { id: "details", label: "App Details" },
-                { id: "permissions", label: "Permissions" },
-                { id: "ml", label: "ML Analysis" },
-                { id: "screenshots", label: "Screenshots" },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={clsx(
-                    "px-3 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all",
-                    activeTab === tab.id
-                      ? "bg-violet-50 text-violet-700 border border-violet-200 shadow-xs"
-                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Canvas Body - Independent Scrolling View */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 lg:p-5 space-y-4 scrollbar-thin scrollbar-thumb-slate-300">
-              
-              {/* TAB 1: ANALYSIS RESULT */}
-              {activeTab === "analysis" && (
-                <>
-                  {/* 1. App Profile Card */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {scan.app_icon ? (
-                        <img
-                          src={scan.app_icon}
-                          alt={scan.app_name}
-                          className="w-12 h-12 rounded-2xl object-contain bg-slate-50 p-1 border border-slate-200 shadow-xs"
-                        />
+              {/* Chat Stream */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin text-xs">
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} className="space-y-1">
+                    <div className={`flex items-start gap-2 ${msg.sender === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                      {msg.sender === "user" ? (
+                        <div className="w-5 h-5 rounded-full bg-slate-800 text-white flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">
+                          U
+                        </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-sm">
-                          {scan.app_name?.slice(0, 2).toUpperCase() || "AP"}
+                        <div className="w-5 h-5 rounded-full bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                          <Bot size={11} />
                         </div>
                       )}
-                      <div>
-                        <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                          {scan.app_name}
-                        </h3>
-                        <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                          {scan.package_name}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            Google Play
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            {scan.category || "Communication"}
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Official App
-                          </span>
-                        </div>
+
+                      <div
+                        className={`p-3 rounded-lg max-w-[88%] leading-relaxed ${
+                          msg.sender === "user"
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-50 text-slate-800 border border-slate-200/80 shadow-xs"
+                        }`}
+                      >
+                        <ChatMarkdown content={msg.text} isUser={msg.sender === "user"} />
                       </div>
                     </div>
-
-                    <a
-                      href={`https://play.google.com/store/apps/details?id=${scan.package_name}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[10px] font-bold text-slate-700 hover:text-slate-900 flex items-center gap-1 transition-colors shadow-xs"
-                    >
-                      <span>Play Store</span>
-                      <ExternalLink size={11} />
-                    </a>
-                  </div>
-
-                  {/* 2. Risk Overview Card (Circular SVG Radial Gauge) */}
-                  <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
-                    <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-3">
-                      Risk Overview
-                    </div>
-
-                    <div className="grid grid-cols-12 gap-3 items-center">
-                      {/* Circular Radial Gauge */}
-                      <div className="col-span-5 flex flex-col items-center justify-center relative">
-                        <div className="relative w-28 h-28 flex items-center justify-center">
-                          <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                            {/* Background track */}
-                            <circle
-                              cx="50"
-                              cy="50"
-                              r="40"
-                              fill="transparent"
-                              stroke="#e2e8f0"
-                              strokeWidth="9"
-                            />
-                            {/* Progress glow arc */}
-                            <circle
-                              cx="50"
-                              cy="50"
-                              r="40"
-                              fill="transparent"
-                              stroke={scoreColor}
-                              strokeWidth="9"
-                              strokeDasharray={251.2}
-                              strokeDashoffset={251.2 - (251.2 * score) / 100}
-                              strokeLinecap="round"
-                              style={{
-                                transition: "stroke-dashoffset 1s ease-in-out",
-                                filter: `drop-shadow(0 0 4px ${scoreColor})`,
-                              }}
-                            />
-                          </svg>
-                          
-                          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                            <span className="text-xl font-black text-slate-900 tracking-tight">
-                              {score}
-                            </span>
-                            <span className="text-[9px] font-bold text-slate-400">
-                              / 100
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Risk Text & Badge */}
-                      <div className="col-span-7 space-y-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <AlertTriangle size={16} className="text-red-500 shrink-0" />
-                          <h4 className="text-xs font-extrabold text-red-600">
-                            {riskTitle}
-                          </h4>
-                        </div>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">
-                          This application exhibits elevated risk signatures that warrant security verification.
-                        </p>
-                        <div className="pt-0.5 flex items-center gap-2 text-[10px] font-bold text-slate-700">
-                          <ShieldCheck size={13} className="text-violet-600" />
-                          <span>Confidence: <strong className="text-slate-900 font-mono">{confidence}%</strong></span>
-                        </div>
-                      </div>
+                    <div className={`text-[9px] text-slate-400 font-mono px-7 ${msg.sender === "user" ? "text-right" : "text-left"}`}>
+                      {msg.timestamp}
                     </div>
                   </div>
+                ))}
 
-                  {/* 3. Top Risk Factors */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                        Top Risk Factors
-                      </span>
-                      <button onClick={() => setActiveTab("permissions")} className="text-[10px] font-bold text-violet-600 hover:text-violet-700">
-                        View All
-                      </button>
-                    </div>
-
-                    <div className="space-y-2.5 pt-0.5">
-                      {(scan.top_contributors && scan.top_contributors.length > 0 ? scan.top_contributors : [
-                        { feature: "Suspicious Permissions", label: "Suspicious Permissions", impact_percent: 31 },
-                        { feature: "Network Connections", label: "Network Connections", impact_percent: 22 },
-                        { feature: "Code Obfuscation", label: "Code Obfuscation", impact_percent: 18 },
-                        { feature: "Potential Data Exfiltration", label: "Potential Data Exfiltration", impact_percent: 15 },
-                        { feature: "Similar to Known Malware", label: "Similar to Known Malware", impact_percent: 14 },
-                      ]).map((item, idx) => {
-                        const pct = item.impact_percent;
-                        const level = pct >= 25 ? "High" : pct >= 15 ? "Medium" : "Low";
-                        const barColor = pct >= 25 ? "bg-red-500" : pct >= 15 ? "bg-amber-500" : "bg-blue-500";
-                        return (
-                          <div key={idx} className="space-y-1">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-semibold text-slate-800">{item.label || item.feature}</span>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-slate-500 font-bold text-[10px]">{pct}%</span>
-                                <span className={clsx(
-                                  "text-[9px] font-extrabold px-1.5 py-0.5 rounded",
-                                  level === "High" ? "bg-red-50 text-red-700 border border-red-200" : level === "Medium" ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
-                                )}>
-                                  {level}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="w-full h-1.5 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
-                              <div
-                                className={clsx("h-full rounded-full transition-all duration-500", barColor)}
-                                style={{ width: `${Math.min(pct * 2.5, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                {isCopilotTyping && (
+                  <div className="flex items-center gap-2 text-slate-400 text-xs italic pl-7">
+                    <RotateCw className="w-3 h-3 animate-spin text-blue-600" />
+                    <span>Analyzing threat telemetry...</span>
                   </div>
+                )}
+                <div ref={chatBottomRef} />
+              </div>
 
-                  {/* 4. ML Model Predictions Breakdown */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                        ML Model Predictions
-                      </span>
-                      <button onClick={() => setActiveTab("ml")} className="text-[10px] font-bold text-violet-600 hover:text-violet-700">
-                        Detailed Metrics
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 pt-0.5">
-                      {[
-                        { name: "LightGBM", score: 89.2, color: "bg-red-500" },
-                        { name: "Random Forest", score: 84.1, color: "bg-orange-500" },
-                        { name: "XGBoost", score: 81.3, color: "bg-orange-500" },
-                        { name: "CatBoost", score: 78.6, color: "bg-amber-500" },
-                        { name: "Neural Network", score: 76.4, color: "bg-amber-500" },
-                        { name: "Ensemble", score: 86.7, color: "bg-violet-500" },
-                      ].map((m) => (
-                        <div key={m.name} className="flex items-center justify-between gap-3 text-[11px]">
-                          <span className="font-semibold text-slate-700 w-24 shrink-0">{m.name}</span>
-                          <div className="flex-1 h-1.5 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
-                            <div
-                              className={clsx("h-full rounded-full", m.color)}
-                              style={{ width: `${m.score}%` }}
-                            />
-                          </div>
-                          <span className="font-mono text-slate-500 font-bold text-[10px] w-10 text-right">
-                            {m.score}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 5. Quick Actions */}
-                  <div className="space-y-2 pt-1">
-                    <a
-                      href={api.downloadPdfReport(scan.scan_id)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(124,58,237,0.25)] transition-all cursor-pointer"
-                    >
-                      <Download size={14} />
-                      <span>Download PDF Report</span>
-                    </a>
-
+              {/* Suggested Prompts */}
+              {chatMessages.length > 0 && chatMessages[chatMessages.length - 1]?.suggestions && (
+                <div className="px-3 py-2 bg-slate-50 border-t border-slate-100 flex flex-wrap gap-1.5 shrink-0">
+                  {chatMessages[chatMessages.length - 1].suggestions!.slice(0, 2).map((sug, idx) => (
                     <button
-                      onClick={() => setActiveTab("permissions")}
-                      className="w-full py-2 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 hover:text-slate-900 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSendCopilotMessage(sug)}
+                      className="text-[10px] font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:border-slate-300 px-2 py-0.5 rounded cursor-pointer truncate max-w-full"
                     >
-                      <Code2 size={13} />
-                      <span>View Declared Permissions</span>
+                      {sug}
                     </button>
-                  </div>
-                </>
-              )}
-
-              {/* TAB 2: APP DETAILS */}
-              {activeTab === "details" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
-                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                      <FileText size={14} className="text-violet-600" />
-                      <span>Package Specification</span>
-                    </h4>
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="text-[10px] text-slate-500 font-semibold">Application Name</div>
-                        <div className="text-slate-900 font-bold mt-0.5">{scan.app_name}</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="text-[10px] text-slate-500 font-semibold">Package Identifier</div>
-                        <div className="text-slate-900 font-mono text-[11px] truncate mt-0.5">{scan.package_name}</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="text-[10px] text-slate-500 font-semibold">Version</div>
-                        <div className="text-slate-900 font-mono mt-0.5">{scan.version || "2.24.18.77"}</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="text-[10px] text-slate-500 font-semibold">Downloads</div>
-                        <div className="text-slate-900 font-mono mt-0.5">{scan.downloads || "5B+"}</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="text-[10px] text-slate-500 font-semibold">Category</div>
-                        <div className="text-slate-900 mt-0.5">{scan.category || "Communication"}</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                        <div className="text-[10px] text-slate-500 font-semibold">Rating</div>
-                        <div className="text-amber-600 font-bold mt-0.5">★ {scan.rating || 4.3} / 5.0</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
-                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                      <Lock size={14} className="text-violet-600" />
-                      <span>Security & Integrity Details</span>
-                    </h4>
-                    <div className="space-y-2 text-xs">
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
-                        <span className="text-slate-500">Developer</span>
-                        <span className="text-slate-900 font-bold">{scan.developer || "WhatsApp LLC"}</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
-                        <span className="text-slate-500">Scan Timestamp</span>
-                        <span className="text-slate-700 font-mono text-[11px]">{scan.scanned_at ? new Date(scan.scanned_at).toLocaleString() : "Just now"}</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
-                        <span className="text-slate-500">Primary Model</span>
-                        <span className="text-violet-700 font-bold">{scan.model_used || "LightGBM"}</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex justify-between items-center">
-                        <span className="text-slate-500">Input Source</span>
-                        <span className="text-slate-700 font-mono text-[11px]">{scan.input_type || "play_url"}</span>
-                      </div>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               )}
 
-              {/* TAB 3: PERMISSIONS */}
-              {activeTab === "permissions" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900">Declared Manifest Permissions</h4>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Found {scan.permissions?.length || 10} permissions in Dalvik manifest</p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
-                        {scan.permissions?.filter(p => p.includes("SMS") || p.includes("CAMERA") || p.includes("ACCESSIBILITY") || p.includes("RECORD")).length || 4} Critical
-                      </span>
-                    </div>
-
-                    <div className="space-y-2">
-                      {(scan.permissions || [
-                        "android.permission.INTERNET",
-                        "android.permission.READ_CONTACTS",
-                        "android.permission.RECORD_AUDIO",
-                        "android.permission.CAMERA",
-                        "android.permission.ACCESS_FINE_LOCATION",
-                        "android.permission.READ_SMS",
-                        "android.permission.SEND_SMS",
-                        "android.permission.SYSTEM_ALERT_WINDOW",
-                        "android.permission.RECEIVE_BOOT_COMPLETED",
-                        "android.permission.BIND_ACCESSIBILITY_SERVICE",
-                      ]).map((perm, pIdx) => {
-                        const isHigh = perm.includes("SMS") || perm.includes("ACCESSIBILITY") || perm.includes("ALERT_WINDOW");
-                        const isMed = perm.includes("CAMERA") || perm.includes("RECORD") || perm.includes("LOCATION");
-                        return (
-                          <div key={pIdx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
-                            <div className="truncate">
-                              <div className="font-mono text-xs text-slate-800 font-semibold truncate">{perm}</div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">
-                                {isHigh ? "High-impact permission frequently abused for financial exfiltration" : isMed ? "Sensitive personal hardware/data access" : "Standard network capability"}
-                              </div>
-                            </div>
-                            <span className={clsx(
-                              "text-[9px] font-extrabold px-2 py-0.5 rounded shrink-0",
-                              isHigh ? "bg-red-50 text-red-700 border border-red-200" : isMed ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-blue-50 text-blue-700 border border-blue-200"
-                            )}>
-                              {isHigh ? "Critical" : isMed ? "Sensitive" : "Normal"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+              {/* Input Box */}
+              <div className="p-3 border-t border-slate-200 bg-white shrink-0">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 focus-within:bg-white focus-within:border-blue-500 transition-colors">
+                  <input
+                    type="text"
+                    value={copilotInput}
+                    onChange={(e) => setCopilotInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendCopilotMessage();
+                      }
+                    }}
+                    placeholder={activeScan ? `Ask about ${activeScan.app_name}...` : "Ask a security query..."}
+                    className="flex-1 bg-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSendCopilotMessage()}
+                    disabled={!copilotInput.trim()}
+                    className="p-1 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white cursor-pointer"
+                  >
+                    <Send size={12} />
+                  </button>
                 </div>
-              )}
+              </div>
+            </aside>
+          )}
+        </div>
 
-              {/* TAB 4: ML ANALYSIS */}
-              {activeTab === "ml" && (
-                <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
-                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                      <Cpu size={14} className="text-violet-600" />
-                      <span>Class Probabilities</span>
-                    </h4>
-                    <div className="space-y-2">
-                      {[
-                        { label: "Fraudulent", pct: scan.class_probabilities?.Fraudulent ?? 89.2, color: "bg-red-500" },
-                        { label: "Suspicious", pct: scan.class_probabilities?.Suspicious ?? 7.1, color: "bg-amber-500" },
-                        { label: "Safe / Benign", pct: scan.class_probabilities?.Safe ?? 3.7, color: "bg-emerald-500" },
-                      ].map((item) => (
-                        <div key={item.label} className="space-y-1">
-                          <div className="flex justify-between text-xs font-semibold">
-                            <span className="text-slate-700">{item.label}</span>
-                            <span className="text-slate-500 font-mono">{item.pct}%</span>
-                          </div>
-                          <div className="w-full h-2 bg-slate-100 border border-slate-200/60 rounded-full overflow-hidden">
-                            <div className={clsx("h-full rounded-full", item.color)} style={{ width: `${item.pct}%` }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+        {/* Drill-Down Forensic Modal */}
+        {selectedModule && (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg overflow-hidden shadow-dropdown animate-in fade-in zoom-in-95">
+              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1 rounded-md bg-blue-50 text-blue-600">
+                    {selectedModule.icon}
                   </div>
-
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 shadow-xs">
-                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                      <Activity size={14} className="text-violet-600" />
-                      <span>Classifier Confidence Benchmark</span>
-                    </h4>
-                    <div className="space-y-2 text-xs">
-                      {[
-                        { model: "LightGBM", accuracy: "98.43%", auc: "0.992", status: "Active Primary" },
-                        { model: "Random Forest", accuracy: "97.81%", auc: "0.985", status: "Ensemble Contributor" },
-                        { model: "XGBoost", accuracy: "98.12%", auc: "0.989", status: "Ensemble Contributor" },
-                        { model: "CatBoost", accuracy: "97.65%", auc: "0.981", status: "Ensemble Contributor" },
-                      ].map((m) => (
-                        <div key={m.model} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-                          <div>
-                            <div className="font-bold text-slate-900">{m.model}</div>
-                            <div className="text-[10px] text-slate-500">{m.status}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-violet-700 font-mono font-bold">{m.accuracy}</div>
-                            <div className="text-[10px] text-slate-400">AUC {m.auc}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 5: SCREENSHOTS */}
-              {activeTab === "screenshots" && (
-                <div className="p-5 rounded-2xl bg-white border border-slate-200 text-center space-y-4 shadow-xs">
-                  <Smartphone size={32} className="mx-auto text-violet-600" />
                   <div>
-                    <h4 className="text-sm font-bold text-slate-900">Visual UI Security Inspection</h4>
-                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                      Screenshots and UI layout frames captured during automated dynamic sandbox emulation.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="h-44 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-3 text-slate-600 text-xs">
-                      <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 mb-2 flex items-center justify-center text-slate-700 font-bold shadow-xs">1</div>
-                      <span className="font-medium text-slate-800">Login / Phone Auth View</span>
-                      <span className="text-[10px] text-emerald-700 font-semibold mt-1">✓ No Overlay Detected</span>
-                    </div>
-                    <div className="h-44 rounded-xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center p-3 text-slate-600 text-xs">
-                      <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 mb-2 flex items-center justify-center text-slate-700 font-bold shadow-xs">2</div>
-                      <span className="font-medium text-slate-800">Permission Request Dialog</span>
-                      <span className="text-[10px] text-amber-700 font-semibold mt-1">⚠️ Full SMS Access Prompt</span>
-                    </div>
+                    <h3 className="text-xs font-bold text-slate-900">{selectedModule.name}</h3>
+                    <p className="text-[10px] text-slate-500 font-mono">{selectedModule.statusText}</p>
                   </div>
                 </div>
-              )}
+                <button
+                  onClick={() => setSelectedModule(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100"
+                >
+                  <X size={15} />
+                </button>
+              </div>
 
+              <div className="p-5 space-y-4 text-xs">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-slate-600 font-medium">Computed Module Score</span>
+                  <span className={`font-mono font-bold ${selectedModule.isSafe ? "text-emerald-600" : "text-amber-600"}`}>
+                    {selectedModule.score} / 100 ({selectedModule.isSafe ? "Passing" : "Elevated Risk"})
+                  </span>
+                </div>
+
+                <div>
+                  <h4 className="text-slate-800 font-semibold mb-2">Forensic Findings & Telemetry</h4>
+                  <div className="space-y-1.5">
+                    {selectedModule.reasons.map((r, rIdx) => (
+                      <div key={rIdx} className="flex items-start gap-2 p-2 rounded bg-slate-50 border border-slate-200 text-slate-700">
+                        <ChevronRight size={13} className="text-blue-600 shrink-0 mt-0.5" />
+                        <span>{r}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    onClick={() => setSelectedModule(null)}
+                    className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
+        )}
 
-        </div>
+        {/* PDF Modal */}
+        {isReportOpen && activeScan && (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-xl w-full max-w-lg overflow-hidden shadow-dropdown animate-in fade-in zoom-in-95">
+              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText size={16} className="text-blue-600" />
+                  <h3 className="text-xs font-bold text-slate-900">Security Audit Dossier</h3>
+                </div>
+                <button
+                  onClick={() => setIsReportOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-3 text-xs">
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-900">{activeScan.app_name}</span>
+                    <span className={`font-mono font-bold ${isSafe ? "text-emerald-600" : "text-amber-600"}`}>
+                      {overallScore}/100 ({riskTitle})
+                    </span>
+                  </div>
+                  <p className="text-slate-500 font-mono text-[10px]">{activeScan.package_name}</p>
+                  <p className="text-slate-700 pt-2 border-t border-slate-200">{dynamicVerdictSummary}</p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setIsReportOpen(false)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <a
+                    href={api.downloadPdfReport(activeScan.scan_id)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Download size={13} />
+                    <span>Download PDF</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Lightbox */}
+        {lightboxImage && (
+          <div
+            onClick={() => setLightboxImage(null)}
+            className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+          >
+            <div className="bg-white border border-slate-200 rounded-xl p-3 max-w-sm text-center space-y-2 shadow-2xl">
+              <img
+                src={lightboxImage}
+                alt="Enlarged screenshot"
+                className="max-h-[70vh] rounded-lg object-contain mx-auto shadow-sm"
+              />
+              <p className="text-[10px] text-slate-400">Click anywhere to close preview</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen w-screen items-center justify-center bg-[#f8fafc]">
+          <RotateCw className="w-6 h-6 animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }

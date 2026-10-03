@@ -1,8 +1,7 @@
 "use client";
-import { useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { Menu, Sun, Bell, ChevronDown } from "lucide-react";
-import clsx from "clsx";
+import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Bell, ChevronDown, Shield, Database, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function Topbar({
@@ -14,14 +13,23 @@ export default function Topbar({
   icon?: React.ReactNode;
 }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const mode = useMemo<"research" | "production">(
-    () => (pathname?.startsWith("/research") ? "research" : "production"),
-    [pathname]
-  );
-  const adminName = useMemo(() => api.adminUsername() || "Admin", []);
-  const adminRole = useMemo(() => api.adminRole(), []);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const adminName = useMemo(() => {
+    if (!mounted) return "Admin";
+    return api.adminUsername() || "Admin";
+  }, [mounted]);
+
+  const adminRole = useMemo(() => {
+    if (!mounted) return "Admin";
+    return api.adminRole() || "Admin";
+  }, [mounted]);
+
   const initials = useMemo(() => {
     if (!adminName) return "AD";
     const parts = adminName.split(/[@._ -]/).filter(Boolean);
@@ -30,78 +38,48 @@ export default function Topbar({
   }, [adminName]);
 
   return (
-    <header className="flex items-center justify-between px-8 py-4 border-b border-slate-200/60 bg-[#f0f3f9]/80 backdrop-blur sticky top-0 z-20">
-      {/* Title & Mobile Toggle */}
-      <div className="flex items-center gap-4">
-        <button className="clay-btn-soft w-10 h-10 rounded-2xl flex items-center justify-center text-slate-600 hover:text-slate-900">
-          <Menu size={18} />
-        </button>
+    <header className="h-14 px-6 border-b border-slate-200/80 bg-white flex items-center justify-between sticky top-0 z-20">
+      {/* Title & Section Breadcrumb */}
+      <div className="flex items-center gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">{title}</h1>
-          <p className="text-xs font-medium text-slate-500">{subtitle}</p>
+          <h1 className="text-sm font-bold text-slate-900 leading-tight tracking-tight">{title}</h1>
+          <p className="text-[11px] text-slate-500 font-medium leading-none mt-0.5">{subtitle}</p>
         </div>
       </div>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-4">
-        {/* Mode Switcher Pill */}
-        <div className="clay-inset flex items-center p-1.5 rounded-2xl">
-          <button
-            onClick={() => router.push("/research")}
-            className={clsx(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200",
-              mode === "research"
-                ? "clay-btn-purple text-white shadow-md"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            Research Mode
-          </button>
-          <button
-            onClick={() => router.push("/dashboard")}
-            className={clsx(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200",
-              mode === "production"
-                ? "clay-btn-purple text-white shadow-md"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            Production Mode
-          </button>
+      <div className="flex items-center gap-2.5">
+        {/* Telemetry pill */}
+        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-[11px] font-mono text-slate-600">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Engine v2.4 (Active)</span>
         </div>
 
-        {/* Theme Sun Toggle */}
-        <button className="clay-btn-soft w-10 h-10 rounded-full flex items-center justify-center text-slate-600 hover:text-amber-500">
-          <Sun size={18} />
-        </button>
-
-        {/* Notifications Bell */}
-        <button className="clay-btn-soft relative w-10 h-10 rounded-full flex items-center justify-center text-slate-600 hover:text-violet-600">
-          <Bell size={18} />
-          <span className="clay-badge-red absolute -top-1 -right-1 w-4 h-4 text-[10px] font-extrabold flex items-center justify-center">
-            3
-          </span>
-        </button>
-
-        {/* Admin Profile Dropdown */}
-        <div className="relative pl-2">
+        {/* User Menu */}
+        <div className="relative">
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
-            className="clay-btn-soft flex items-center gap-3 p-1.5 pr-3 rounded-2xl cursor-pointer"
+            className="flex items-center gap-2 p-1 pr-2 rounded-lg hover:bg-slate-50 border border-slate-200 transition-colors cursor-pointer"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 overflow-hidden border border-white shadow-sm flex items-center justify-center font-black text-white text-xs">
-              <span>{initials}</span>
+            <div
+              className="w-6 h-6 rounded-md bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold text-[10px]"
+              suppressHydrationWarning
+            >
+              {initials}
             </div>
-            <div className="leading-tight text-left">
-              <div className="text-xs font-extrabold text-slate-900">{adminName}</div>
-              <div className="text-[10px] font-bold text-violet-600">{adminRole}</div>
-            </div>
-            <ChevronDown size={14} className="text-slate-400" />
+            <span className="text-xs font-semibold text-slate-800" suppressHydrationWarning>
+              {adminName}
+            </span>
+            <ChevronDown size={12} className="text-slate-400" />
           </button>
 
-          {menuOpen ? (
-            <div className="absolute right-0 mt-3 w-48 panel p-2 z-50 animate-in fade-in zoom-in-95">
+          {menuOpen && (
+            <div className="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-xl p-1 z-50 shadow-dropdown animate-in fade-in zoom-in-95">
+              <div className="px-3 py-2 border-b border-slate-100">
+                <div className="text-xs font-semibold text-slate-900" suppressHydrationWarning>{adminName}</div>
+                <div className="text-[10px] text-slate-500 font-mono" suppressHydrationWarning>{adminRole}</div>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -109,12 +87,12 @@ export default function Topbar({
                   setMenuOpen(false);
                   router.replace("/login");
                 }}
-                className="w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                className="w-full text-left px-3 py-1.5 mt-1 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
               >
                 Sign out
               </button>
             </div>
-          ) : null}
+          )}
         </div>
       </div>
     </header>

@@ -86,25 +86,40 @@ Guidelines:
 def _detect_intent(prompt: str) -> Dict[str, Any]:
     text = prompt.strip()
     
-    # 1. Play Store URL
-    play_match = re.search(r"play\.google\.com/store/apps/details\?(?:[^&]*&)*id=([a-zA-Z0-9_\.]+)", text)
+    # 1. Play Store URL (extract package name directly and construct canonical Play Store URL)
+    play_match = re.search(
+        r"(?:https?://)?(?:play\.google\.com/store/apps/details|market://details)\?(?:[^&\s]*&)*id=([a-zA-Z0-9_\.]+)",
+        text,
+        re.IGNORECASE,
+    )
     if play_match:
-        return {"type": "play_url", "target": text, "package_name": play_match.group(1)}
+        pkg = play_match.group(1).strip()
+        clean_url = f"https://play.google.com/store/apps/details?id={pkg}"
+        return {"type": "play_url", "target": clean_url, "package_name": pkg}
         
     # 2. Direct APK URL
     if re.search(r"https?://[^\s]+\.apk(?:\?[^\s]*)?", text, re.IGNORECASE):
-        url_match = re.search(r"(https?://[^\s]+)", text)
-        return {"type": "apk_url", "target": url_match.group(1) if url_match else text}
+        url_match = re.search(r"(https?://[^\s]+\.apk(?:\?[^\s]*)?)", text, re.IGNORECASE)
+        clean_apk_url = url_match.group(1).strip() if url_match else text
+        return {"type": "apk_url", "target": clean_apk_url}
         
     # 3. SHA-256 Hash (64 hex characters)
     hash_match = re.search(r"\b([a-fA-F0-9]{64})\b", text)
     if hash_match:
         return {"type": "hash", "target": hash_match.group(1)}
         
-    # 4. Standalone Android package name (e.g., com.whatsapp, org.telegram.messenger)
-    pkg_match = re.fullmatch(r"([a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+)", text)
-    if pkg_match and not ("http" in text or " " in text):
-        return {"type": "package_name", "target": text, "package_name": text}
+    # 4. Standalone or embedded Android package name (e.g. com.whatsapp, scan com.spotify.music)
+    pkg_search = re.search(r"\b([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)+)\b", text)
+    if pkg_search and not ("http://" in text or "https://" in text):
+        pkg_candidate = pkg_search.group(1).strip()
+        non_packages = (
+            ".py", ".ts", ".tsx", ".js", ".json", ".html", ".css", ".md", ".txt",
+            ".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp", ".zip", ".tar", ".gz"
+        )
+        if not pkg_candidate.endswith(non_packages) and "." in pkg_candidate:
+            top_domains = ("com.", "org.", "net.", "io.", "co.", "in.", "app.", "us.", "de.", "uk.", "ru.", "dev.", "ai.", "android.")
+            if any(pkg_candidate.startswith(td) for td in top_domains) or len(pkg_candidate.split(".")) >= 3:
+                return {"type": "package_name", "target": pkg_candidate, "package_name": pkg_candidate}
         
     return {"type": "question", "target": text}
 
@@ -194,6 +209,7 @@ async def chat_copilot(
     current_scan_id: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
+    chat_history: Optional[str] = Form(None),
     current_user: Optional[dict] = Depends(get_optional_user),
 ):
     """
@@ -201,6 +217,7 @@ async def chat_copilot(
     Accepts natural language questions, direct links, package names, hashes, or uploaded APK files.
     """
     prompt_str = (prompt or "").strip()
+    user_dict = current_user if isinstance(current_user, dict) else None
     
     # Determine ML classifier model vs LLM Copilot model
     # ML models are: lightgbm, random_forest, xgboost, catboost
@@ -217,7 +234,7 @@ async def chat_copilot(
 
     # 1. Handle Direct APK File Upload via Chat
     if file and hasattr(file, "filename") and file.filename:
-        upload_res = await scan.scan_apk_upload(file=file, model_name=ml_model_to_use, current_user=current_user)
+        upload_res = await scan.scan_apk_upload(file=file, model_name=ml_model_to_use, current_user=user_dict)
         app_name = upload_res.get("app_name", file.filename)
         score = upload_res.get("overall_risk_score", 0)
         pred = upload_res.get("prediction", "Unknown")
@@ -229,7 +246,7 @@ async def chat_copilot(
             f"- **Risk Score**: **{score}/100 ({pred})**\n"
             f"- **Confidence**: {upload_res.get('confidence', 95)}%\n"
             f"- **Model Used**: {upload_res.get('model_used', 'LightGBM')}\n\n"
-            f"The full threat dossier has been loaded in the right-side analysis canvas."
+            f"The full threat dossier has been loaded into your Workspace canvas."
         )
         
         steps = [
@@ -272,7 +289,15 @@ async def chat_copilot(
                 {"step": 4, "title": "Running ML analysis (LightGBM, XGBoost, etc.)...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Generating risk report and insights...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = await scan.scan_play_url(url=target, model_name=ml_model_to_use, current_user=current_user)
+            try:
+                scan_res = await asyncio.to_thread(scan.scan_play_url, url=target, model_name=ml_model_to_use, current_user=user_dict)
+            except Exception as e:
+                logger.warning(f"scan_play_url failed ({e}), falling back to package scan")
+                pkg = intent.get("package_name")
+                if pkg:
+                    scan_res = await asyncio.to_thread(scan.scan_package_name, package_name=pkg, model_name=ml_model_to_use, current_user=user_dict)
+                else:
+                    raise
         elif intent["type"] == "apk_url":
             steps = [
                 {"step": 1, "title": "Connecting to remote APK host...", "status": "completed", "time": "Just now"},
@@ -281,7 +306,7 @@ async def chat_copilot(
                 {"step": 4, "title": "Extracted permission vectors & feature matrix...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Completed AI threat scoring & verification...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = await scan.scan_apk_url(url=target, model_name=ml_model_to_use, current_user=current_user)
+            scan_res = await asyncio.to_thread(scan.scan_apk_url, url=target, model_name=ml_model_to_use, current_user=user_dict)
         elif intent["type"] == "package_name":
             steps = [
                 {"step": 1, "title": f"Resolving package ID: {target}...", "status": "completed", "time": "Just now"},
@@ -290,25 +315,27 @@ async def chat_copilot(
                 {"step": 4, "title": "Evaluated icon similarity & clone heuristics...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Generated comprehensive security evaluation...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = scan.scan_package_name(package_name=target, model_name=ml_model_to_use, current_user=current_user)
+            scan_res = await asyncio.to_thread(scan.scan_package_name, package_name=target, model_name=ml_model_to_use, current_user=user_dict)
         elif intent["type"] == "hash":
             steps = [
                 {"step": 1, "title": f"Querying SHA-256 hash database: {target[:12]}...", "status": "completed", "time": "Just now"},
                 {"step": 2, "title": "Retrieved historical scan records & threat intel...", "status": "completed", "time": "Just now"},
                 {"step": 3, "title": "Compiled multi-engine classification results...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = scan.scan_by_hash(sha256=target, model_name=ml_model_to_use, current_user=current_user)
+            scan_res = await asyncio.to_thread(scan.scan_by_hash, sha256=target, model_name=ml_model_to_use, current_user=user_dict)
             
         app_name = scan_res.get("app_name", target)
         score = scan_res.get("overall_risk_score", 0)
         pred = scan_res.get("prediction", "Unknown")
+        trust = round(scan_res.get("trust_score", 80))
         
         reply = (
-            f"Analysis complete! Here's the security overview for **{app_name}**.\n\n"
+            f"Analysis complete! Here is the security dossier for **{app_name}** (`{scan_res.get('package_name', target)}`):\n\n"
             f"- **Overall Risk**: **{score}/100 ({pred})**\n"
-            f"- **Confidence Score**: {scan_res.get('confidence', 96.3)}%\n"
-            f"- **Package**: `{scan_res.get('package_name', target)}`\n\n"
-            f"The interactive Threat Dossier has been loaded in the right panel with detailed ML predictions and permission breakdowns."
+            f"- **Trust Score**: **{trust}/100**\n"
+            f"- **Model Used**: {scan_res.get('model_used', 'LightGBM')}\n"
+            f"- **Confidence Score**: {scan_res.get('confidence', 96.3)}%\n\n"
+            f"The interactive Threat Dossier has been loaded into your Workspace canvas. You can ask follow-up questions about its permissions, bytecode, or fraud indicators."
         )
         
         return {
@@ -319,8 +346,8 @@ async def chat_copilot(
             "suggestions": [
                 "Why is the risk score high?",
                 "Show suspicious permissions",
-                "Compare with official app",
-                "What do these permissions mean?",
+                "Explain developer credibility",
+                "Generate executive security summary",
             ],
         }
 
@@ -338,6 +365,23 @@ async def chat_copilot(
                 except Exception:
                     pass
 
+    # Build conversation history context
+    history_ctx = ""
+    if chat_history:
+        try:
+            parsed_hist = json.loads(chat_history)
+            if isinstance(parsed_hist, list):
+                turns = []
+                for m in parsed_hist[-6:]:
+                    sender_lbl = "User" if m.get("sender") == "user" else "Copilot"
+                    txt_body = (m.get("text") or "").strip()
+                    if txt_body:
+                        turns.append(f"{sender_lbl}: {txt_body[:400]}")
+                if turns:
+                    history_ctx = "\n\nRECENT CONVERSATION HISTORY:\n" + "\n".join(turns)
+        except Exception:
+            pass
+
     # Try Google Gemini with requested model
     gemini_client = get_gemini_client(model_name)
     if gemini_client:
@@ -354,10 +398,10 @@ async def chat_copilot(
                 )
                 
             prompt_full = (
-                f"{SYSTEM_PROMPT}{ctx_summary}\n\n"
-                f"USER QUESTION: {prompt_str}\n\n"
+                f"{SYSTEM_PROMPT}{ctx_summary}{history_ctx}\n\n"
+                f"CURRENT USER QUESTION: {prompt_str}\n\n"
                 f"Answer the user's question directly, clearly, and thoroughly. "
-                f"Provide actionable technical information."
+                f"If the user is asking a follow-up about a previously analyzed app, maintain full context and continuity."
             )
             response = await asyncio.to_thread(gemini_client.generate_content, prompt_full)
             reply = response.text

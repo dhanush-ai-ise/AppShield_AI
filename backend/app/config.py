@@ -15,13 +15,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "AppShield AI"
     ENV: str = os.getenv("ENV", "development")
 
-    # --- Databases ---
-    POSTGRES_URL: str = os.getenv(
-        "POSTGRES_URL", "postgresql+psycopg://appshield:appshield@localhost:5432/appshield"
-    )
+    # --- Database (MongoDB) ---
     MONGO_URL: str = os.getenv("MONGO_URL", "mongodb://localhost:27017")
     MONGO_DB: str = os.getenv("MONGO_DB", "appshield_reports")
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
     # --- Storage paths & limits ---
     DATASET_ROOT: Path = BASE_DIR.parent / "datasets"

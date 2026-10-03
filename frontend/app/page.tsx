@@ -1,5 +1,5 @@
-import ScanHistoryPage from "./scan-history/page";
+import DashboardPage from "./dashboard/page";
 
 export default function Home() {
-  return <ScanHistoryPage />;
+  return <DashboardPage />;
 }

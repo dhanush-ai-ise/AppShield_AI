@@ -5,9 +5,14 @@ Run with: uvicorn app.main:app --reload --port 8000
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import logging
+import threading
+
 from app.config import settings
-from app.db.postgres import Base, engine
+from app.db.mongo import ping_mongo, init_db
 from app.routers import auth, datasets_router, models_router, reports_router, scan, copilot_router
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -35,16 +40,16 @@ app.include_router(datasets_router.router)
 app.include_router(reports_router.router)
 
 
-import threading
-
-
 @app.on_event("startup")
 def on_startup():
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception:
-        # Don't fail startup if Postgres isn't available
-        pass
+    if ping_mongo():
+        logger.info("Connected to MongoDB successfully.")
+        init_db()
+    else:
+        logger.warning(
+            "MongoDB is not currently reachable on configured MONGO_URL. "
+            "Running with in-memory / local fallback."
+        )
 
     def _warmup():
         try:

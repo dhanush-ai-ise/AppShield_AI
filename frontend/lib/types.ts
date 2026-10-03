@@ -17,8 +17,10 @@ export interface ScanResult {
   rating?: number;
   app_icon?: string;
   size_mb?: number;
+  sha256?: string;
   scanned_at?: string;
   input_type?: string;
+  source?: string;
   status?: string;
   overall_risk_score: number; // 0-100
   trust_score: number;

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   History, Calendar, Download, Search, CheckCircle2,
   FileText, BarChart2, MoreHorizontal, ShieldAlert, Shield, ShieldCheck,
-  Play, UploadCloud, Box, Hash, Copy, X
+  Play, UploadCloud, Box, Hash, Copy, X, ArrowUpDown, Trash2, AlertTriangle
 } from "lucide-react";
 import { Link as LinkIcon } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
@@ -56,49 +56,49 @@ function getInputMethodMeta(type?: string) {
   const t = (type || "").toLowerCase();
   if (t.includes("play") || t === "play_url") {
     return {
-      label: "Play Store URL",
+      label: "Play Store",
       icon: Play,
-      iconColor: "text-emerald-500",
-      bg: "bg-emerald-50 text-emerald-600 border-emerald-100",
+      iconColor: "text-emerald-600",
+      bg: "bg-emerald-50 text-emerald-700 border-emerald-200",
     };
   }
   if (t.includes("upload") || t === "apk_upload") {
     return {
-      label: "Upload APK",
+      label: "APK Upload",
       icon: UploadCloud,
-      iconColor: "text-blue-500",
-      bg: "bg-blue-50 text-blue-600 border-blue-100",
+      iconColor: "text-blue-600",
+      bg: "bg-blue-50 text-blue-700 border-blue-200",
     };
   }
   if (t.includes("package") || t === "package_name") {
     return {
-      label: "Package Name",
+      label: "Package ID",
       icon: Box,
-      iconColor: "text-purple-500",
-      bg: "bg-purple-50 text-purple-600 border-purple-100",
+      iconColor: "text-indigo-600",
+      bg: "bg-indigo-50 text-indigo-700 border-indigo-200",
     };
   }
   if (t.includes("apk_url") || t.includes("link") || t.includes("url")) {
     return {
-      label: "APK Download URL",
+      label: "APK URL",
       icon: LinkIcon,
-      iconColor: "text-cyan-500",
-      bg: "bg-cyan-50 text-cyan-600 border-cyan-100",
+      iconColor: "text-sky-600",
+      bg: "bg-sky-50 text-sky-700 border-sky-200",
     };
   }
   if (t.includes("hash") || t.includes("sha")) {
     return {
-      label: "APK Hash (SHA256)",
+      label: "SHA-256",
       icon: Hash,
-      iconColor: "text-indigo-500",
-      bg: "bg-indigo-50 text-indigo-600 border-indigo-100",
+      iconColor: "text-slate-600",
+      bg: "bg-slate-100 text-slate-700 border-slate-200",
     };
   }
   return {
-    label: "Play Store URL",
+    label: "Play Store",
     icon: Play,
-    iconColor: "text-emerald-500",
-    bg: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    iconColor: "text-emerald-600",
+    bg: "bg-emerald-50 text-emerald-700 border-emerald-200",
   };
 }
 
@@ -106,21 +106,21 @@ function getInputMethodMeta(type?: string) {
 function getRiskLevelMeta(score: number, prediction?: string) {
   if (score >= 70 || prediction === "Fraudulent") {
     return {
-      level: "High",
-      badgeClass: "bg-red-50 text-red-600 border border-red-200/80",
-      scoreColor: "text-red-600",
+      level: "Critical Fraud",
+      badgeClass: "bg-rose-50 text-rose-700 border-rose-200",
+      scoreColor: "text-rose-600",
     };
   }
-  if (score >= 40 || prediction === "Suspicious") {
+  if (score >= 30 || prediction === "Suspicious") {
     return {
-      level: "Medium",
-      badgeClass: "bg-amber-50 text-amber-600 border border-amber-200/80",
+      level: "Suspicious",
+      badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
       scoreColor: "text-amber-600",
     };
   }
   return {
-    level: "Low",
-    badgeClass: "bg-emerald-50 text-emerald-600 border border-emerald-200/80",
+    level: "Verified Safe",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
     scoreColor: "text-emerald-600",
   };
 }
@@ -164,7 +164,7 @@ function exportToCsv(scans: ScanResult[]) {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `appshield_scan_history_${new Date().toISOString().slice(0, 10)}.csv`);
+  link.setAttribute("download", `appshield_audit_history_${new Date().toISOString().slice(0, 10)}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -189,11 +189,79 @@ export default function ScanHistoryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const pageSize = 8;
+  const pageSize = 10;
+
+  // Deletion and confirmation state
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [itemToDelete, setItemToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [showBatchConfirm, setShowBatchConfirm] = useState<boolean>(false);
+
+  // Auto-dismiss delete notice
+  useEffect(() => {
+    if (deleteNotice) {
+      const timer = setTimeout(() => setDeleteNotice(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [deleteNotice]);
+
+  const executeDeleteSingle = async (scanId: string, appName: string) => {
+    setIsDeleting(true);
+    try {
+      await api.deleteScan(scanId);
+      setScans((prev) => prev.filter((s) => s.scan_id !== scanId));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(scanId);
+        return next;
+      });
+      if (typeof window !== "undefined") {
+        try {
+          const lastRaw = sessionStorage.getItem("appshield_last_scan");
+          if (lastRaw && JSON.parse(lastRaw)?.scan_id === scanId) {
+            sessionStorage.removeItem("appshield_last_scan");
+          }
+          sessionStorage.removeItem(`appshield_scan_${scanId}`);
+        } catch {}
+      }
+      setItemToDelete(null);
+      setDeleteNotice(`Successfully deleted scan record for "${appName}".`);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete scan record.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const executeBatchDelete = async () => {
+    if (!selectedIds.size) return;
+    setIsDeleting(true);
+    const ids = Array.from(selectedIds);
+    try {
+      await api.deleteScansBatch(ids);
+      setScans((prev) => prev.filter((s) => !selectedIds.has(s.scan_id)));
+      if (typeof window !== "undefined") {
+        try {
+          const lastRaw = sessionStorage.getItem("appshield_last_scan");
+          if (lastRaw && selectedIds.has(JSON.parse(lastRaw)?.scan_id)) {
+            sessionStorage.removeItem("appshield_last_scan");
+          }
+          ids.forEach((sid) => sessionStorage.removeItem(`appshield_scan_${sid}`));
+        } catch {}
+      }
+      const count = selectedIds.size;
+      setSelectedIds(new Set());
+      setShowBatchConfirm(false);
+      setDeleteNotice(`Successfully deleted ${count} scan dossiers from the database.`);
+    } catch (err: any) {
+      alert(err.message || "Failed to batch delete records.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Load scans from session cache and backend
   useEffect(() => {
-    // 1. Check sessionStorage for latest scans belonging to current user
     const cachedScans: ScanResult[] = [];
     if (typeof window !== "undefined") {
       try {
@@ -207,7 +275,6 @@ export default function ScanHistoryPage() {
       } catch {}
     }
 
-    // 2. Fetch from backend history
     const fetchAll = isAdmin && viewScope === "all";
     api
       .scanHistory(100, fetchAll)
@@ -230,7 +297,6 @@ export default function ScanHistoryPage() {
         setScans(cachedScans);
       });
 
-    // Also fetch counts if admin
     if (isAdmin) {
       api.scanHistory(100, true).then((allR) => {
         setTotalOrgScansCount(allR?.scans?.length ?? 0);
@@ -252,7 +318,7 @@ export default function ScanHistoryPage() {
     }
   }, [activeMenuId]);
 
-  // Dynamic KPI calculations
+  // KPI calculations
   const totalScans = scans.length;
   const highRiskCount = useMemo(
     () => scans.filter((s) => s.overall_risk_score >= 70 || s.prediction === "Fraudulent").length,
@@ -267,7 +333,7 @@ export default function ScanHistoryPage() {
     () =>
       scans.filter(
         (s) =>
-          (s.overall_risk_score >= 40 && s.overall_risk_score < 70) ||
+          (s.overall_risk_score >= 30 && s.overall_risk_score < 70) ||
           (s.prediction === "Suspicious" && s.overall_risk_score < 70)
       ).length,
     [scans]
@@ -278,7 +344,7 @@ export default function ScanHistoryPage() {
   );
 
   const lowRiskCount = useMemo(
-    () => scans.filter((s) => (s.overall_risk_score < 40 && s.prediction !== "Fraudulent") || s.prediction === "Safe").length,
+    () => scans.filter((s) => (s.overall_risk_score < 30 && s.prediction !== "Fraudulent") || s.prediction === "Safe").length,
     [scans]
   );
   const lowRiskPct = useMemo(
@@ -286,11 +352,10 @@ export default function ScanHistoryPage() {
     [totalScans, lowRiskCount]
   );
 
-  // Dynamic filter and sort
+  // Filter and sort
   const filteredScans = useMemo(() => {
     let result = [...scans];
 
-    // Time filter
     if (timeRange !== "all_time") {
       const now = new Date().getTime();
       result = result.filter((s) => {
@@ -310,7 +375,6 @@ export default function ScanHistoryPage() {
       });
     }
 
-    // Search query
     if (searchTerm.trim()) {
       const query = searchTerm.toLowerCase().trim();
       result = result.filter(
@@ -322,22 +386,20 @@ export default function ScanHistoryPage() {
       );
     }
 
-    // Risk level filter
     if (riskFilter !== "all") {
       if (riskFilter === "high") {
         result = result.filter((s) => s.overall_risk_score >= 70 || s.prediction === "Fraudulent");
       } else if (riskFilter === "medium") {
         result = result.filter(
           (s) =>
-            (s.overall_risk_score >= 40 && s.overall_risk_score < 70) ||
+            (s.overall_risk_score >= 30 && s.overall_risk_score < 70) ||
             (s.prediction === "Suspicious" && s.overall_risk_score < 70)
         );
       } else if (riskFilter === "low") {
-        result = result.filter((s) => s.overall_risk_score < 40 && s.prediction !== "Fraudulent");
+        result = result.filter((s) => s.overall_risk_score < 30 && s.prediction !== "Fraudulent");
       }
     }
 
-    // Input method filter
     if (methodFilter !== "all") {
       result = result.filter((s) => {
         const t = (s.input_type || "").toLowerCase();
@@ -350,14 +412,12 @@ export default function ScanHistoryPage() {
       });
     }
 
-    // Status filter
     if (statusFilter !== "all") {
       if (statusFilter === "completed") {
         result = result.filter((s) => (s.status || "Completed").toLowerCase() === "completed");
       }
     }
 
-    // Sorting
     result.sort((a, b) => {
       if (sortOption === "newest") {
         const tA = a.scanned_at ? new Date(a.scanned_at).getTime() : 0;
@@ -391,37 +451,34 @@ export default function ScanHistoryPage() {
   );
 
   return (
-    <div className="flex bg-[#f0f3f9] min-h-screen text-slate-800 font-sans">
+    <div className="flex bg-[#f8fafc] min-h-screen text-slate-800 font-sans">
       <Sidebar />
       <main className="flex-1 min-h-screen pb-16 overflow-x-hidden">
-        <Topbar title="Scan History" subtitle="View and manage all your previously scanned applications" />
+        <Topbar title="Security Audit Explorer" subtitle="Forensic dossiers and historical telemetry across inspected applications" />
 
-        <div className="px-8 py-6 max-w-[1600px] mx-auto space-y-6">
+        <div className="px-8 py-6 max-w-7xl mx-auto space-y-6">
 
-          {/* Account Context & Scope Switcher Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-3.5 px-5 rounded-2xl border border-slate-200/80 shadow-[4px_4px_10px_rgba(163,177,198,0.15)]">
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-md shadow-violet-500/20">
+          {/* Account Scope Switcher Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200/90 p-3.5 px-4 rounded-xl shadow-card">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs">
                 {currentUsername.slice(0, 2).toUpperCase()}
               </div>
-              <div>
+              <div className="leading-tight">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-500">Active Account:</span>
-                  <span className="text-xs font-black text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200/60">
-                    {currentUsername}
-                  </span>
-                  <span className="text-[10px] font-bold text-violet-700 bg-violet-50 border border-violet-200/60 px-2 py-0.5 rounded-md">
+                  <span className="text-xs font-bold text-slate-900">{currentUsername}</span>
+                  <span className="text-[10px] font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
                     {currentUserRole}
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Showing {viewScope === "all" ? "all organization scans" : `scans created by ${currentUsername}`}
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  Scope: {viewScope === "all" ? "All organization audit records" : `Dossiers created by ${currentUsername}`}
                 </div>
               </div>
             </div>
 
-            {isAdmin ? (
-              <div className="clay-inset flex items-center p-1 rounded-xl">
+            {isAdmin && (
+              <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200/60">
                 <button
                   type="button"
                   onClick={() => {
@@ -429,13 +486,13 @@ export default function ScanHistoryPage() {
                     setCurrentPage(1);
                   }}
                   className={clsx(
-                    "px-4 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer",
+                    "px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
                     viewScope === "my"
-                      ? "clay-btn-purple text-white shadow-sm"
+                      ? "bg-white text-slate-900 shadow-2xs"
                       : "text-slate-600 hover:text-slate-900"
                   )}
                 >
-                  My Scans ({myScansCount})
+                  My Dossiers ({myScansCount})
                 </button>
                 <button
                   type="button"
@@ -444,153 +501,94 @@ export default function ScanHistoryPage() {
                     setCurrentPage(1);
                   }}
                   className={clsx(
-                    "px-4 py-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer",
+                    "px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer",
                     viewScope === "all"
-                      ? "clay-btn-purple text-white shadow-sm"
+                      ? "bg-white text-slate-900 shadow-2xs"
                       : "text-slate-600 hover:text-slate-900"
                   )}
                 >
-                  All Organization Scans ({totalOrgScansCount})
+                  All Org Dossiers ({totalOrgScansCount})
                 </button>
-              </div>
-            ) : (
-              <div className="text-xs font-bold text-slate-500 bg-slate-50 border border-slate-200/60 px-3 py-1.5 rounded-xl">
-                Account Scans Only
               </div>
             )}
           </div>
 
-          {/* PAGE HEADER: Icon, Title, Time Dropdown, Export Button */}
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200/80 flex items-center justify-center text-violet-600 shadow-[4px_4px_10px_rgba(163,177,198,0.25),-4px_-4px_10px_rgba(255,255,255,0.9)] shrink-0">
-                <History size={24} />
-              </div>
+          {/* 4 Metric KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-card flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Scan History</h1>
-                <p className="text-xs font-medium text-slate-500">View and manage all your previously scanned applications</p>
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-mono">
+                  Total Analyzed
+                </div>
+                <div className="text-2xl font-bold font-mono text-slate-900 mt-1">{totalScans}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
+                <FileText size={18} />
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              {/* Time Range Selector */}
-              <div className="relative">
-                <div className="clay-btn-soft px-4 py-2.5 rounded-2xl flex items-center gap-2 text-xs font-extrabold text-slate-700 border border-slate-200/80 shadow-sm cursor-pointer">
-                  <Calendar size={15} className="text-violet-600" />
-                  <select
-                    value={timeRange}
-                    onChange={(e) => {
-                      setTimeRange(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="bg-transparent text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer pr-1"
-                  >
-                    <option value="all_time">All Time</option>
-                    <option value="today">Today</option>
-                    <option value="past_7d">Past 7 Days</option>
-                    <option value="past_30d">Past 30 Days</option>
-                    <option value="this_year">This Year</option>
-                  </select>
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-card flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-mono">
+                  Critical Fraud
                 </div>
+                <div className="text-2xl font-bold font-mono text-rose-600 mt-1">{highRiskCount}</div>
               </div>
+              <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
+                <ShieldAlert size={18} />
+              </div>
+            </div>
 
-              {/* Export History Button */}
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-card flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-mono">
+                  Suspicious Apps
+                </div>
+                <div className="text-2xl font-bold font-mono text-amber-600 mt-1">{mediumRiskCount}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+                <Shield size={18} />
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-card flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider font-mono">
+                  Verified Safe
+                </div>
+                <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">{lowRiskCount}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+                <ShieldCheck size={18} />
+              </div>
+            </div>
+          </div>
+
+          {/* Delete Notice Banner */}
+          {deleteNotice && (
+            <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between shadow-2xs animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-medium">{deleteNotice}</span>
+              </div>
               <button
-                onClick={() => exportToCsv(filteredScans)}
-                className="clay-btn-purple px-5 py-2.5 rounded-2xl flex items-center gap-2 text-xs font-extrabold shadow-[0_8px_20px_rgba(124,58,237,0.25)] hover:shadow-violet-400 transition-all cursor-pointer text-white"
+                type="button"
+                onClick={() => setDeleteNotice(null)}
+                className="text-slate-400 hover:text-slate-700 text-xs px-2 py-0.5 cursor-pointer"
               >
-                <Download size={15} /> Export History
+                Dismiss
               </button>
             </div>
-          </div>
+          )}
 
-          {/* DYNAMIC 4 KPI CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {/* Card 1: Total Scans */}
-            <div className="panel p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-violet-100/70 text-violet-600 border border-violet-200/50 flex items-center justify-center shadow-inner shrink-0">
-                  <FileText size={22} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500">Total Scans</div>
-                  <div className="text-2xl font-black text-slate-900 tracking-tight">{totalScans}</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="inline-flex items-center text-xs font-black text-emerald-600">
-                  ↑ +12%
-                </span>
-                <div className="text-[10px] font-medium text-slate-400">vs last month</div>
-              </div>
-            </div>
+          {/* Table Container */}
+          <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-card space-y-4">
 
-            {/* Card 2: High Risk Apps */}
-            <div className="panel p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-red-100/70 text-red-500 border border-red-200/50 flex items-center justify-center shadow-inner shrink-0">
-                  <ShieldAlert size={22} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500">High Risk Apps</div>
-                  <div className="text-2xl font-black text-slate-900 tracking-tight">{highRiskCount}</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="inline-flex items-center text-xs font-black text-red-500">
-                  ↑ +5%
-                </span>
-                <div className="text-[10px] font-medium text-slate-400">{highRiskPct}% of total</div>
-              </div>
-            </div>
-
-            {/* Card 3: Medium Risk Apps */}
-            <div className="panel p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-100/70 text-amber-500 border border-amber-200/50 flex items-center justify-center shadow-inner shrink-0">
-                  <Shield size={22} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500">Medium Risk Apps</div>
-                  <div className="text-2xl font-black text-slate-900 tracking-tight">{mediumRiskCount}</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="inline-flex items-center text-xs font-black text-emerald-600">
-                  ↓ -8%
-                </span>
-                <div className="text-[10px] font-medium text-slate-400">{mediumRiskPct}% of total</div>
-              </div>
-            </div>
-
-            {/* Card 4: Low Risk Apps */}
-            <div className="panel p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-100/70 text-emerald-600 border border-emerald-200/50 flex items-center justify-center shadow-inner shrink-0">
-                  <ShieldCheck size={22} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500">Low Risk Apps</div>
-                  <div className="text-2xl font-black text-slate-900 tracking-tight">{lowRiskCount}</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="inline-flex items-center text-xs font-black text-emerald-600">
-                  ↑ +15%
-                </span>
-                <div className="text-[10px] font-medium text-slate-400">{lowRiskPct}% of total</div>
-              </div>
-            </div>
-          </div>
-
-          {/* MAIN TABLE PANEL */}
-          <div className="panel p-6">
-
-            {/* Toolbar: Search + 4 Dropdowns */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-              {/* Search Bar */}
-              <div className="relative min-w-[280px] flex-1 max-w-md">
-                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            {/* Filter Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Search */}
+              <div className="relative min-w-[260px] flex-1 max-w-md">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   value={searchTerm}
@@ -598,100 +596,93 @@ export default function ScanHistoryPage() {
                     setSearchTerm(e.target.value);
                     setCurrentPage(1);
                   }}
-                  placeholder="Search in scan history..."
-                  className="w-full pl-10 pr-4 py-2.5 text-xs font-semibold rounded-2xl bg-[#eef2f9] border border-slate-200/80 shadow-inner focus:outline-none focus:border-violet-500 text-slate-800 placeholder-slate-400 transition-all"
+                  placeholder="Filter by package name, title, or SHA-256..."
+                  className="w-full h-8 pl-8 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
                 />
               </div>
 
-              {/* 4 Dropdown Filters */}
-              <div className="flex flex-wrap items-center gap-2.5">
-                {/* Risk Level Filter */}
+              {/* Filters & Export */}
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={riskFilter}
                   onChange={(e) => {
                     setRiskFilter(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="clay-btn-soft px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 border border-slate-200/80 focus:outline-none cursor-pointer"
+                  className="h-8 px-2.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 focus:outline-none"
                 >
-                  <option value="all">All Risk Levels</option>
-                  <option value="high">High Risk (≥ 70)</option>
-                  <option value="medium">Medium Risk (40-69)</option>
-                  <option value="low">Low Risk (&lt; 40)</option>
+                  <option value="all">All Risk Tiers</option>
+                  <option value="high">Critical Fraud (≥ 70)</option>
+                  <option value="medium">Suspicious (30–69)</option>
+                  <option value="low">Verified Safe (&lt; 30)</option>
                 </select>
 
-                {/* Input Method Filter */}
                 <select
                   value={methodFilter}
                   onChange={(e) => {
                     setMethodFilter(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="clay-btn-soft px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 border border-slate-200/80 focus:outline-none cursor-pointer"
+                  className="h-8 px-2.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 focus:outline-none"
                 >
-                  <option value="all">All Input Methods</option>
-                  <option value="play_url">Play Store URL</option>
-                  <option value="apk_upload">Upload APK</option>
-                  <option value="package_name">Package Name</option>
-                  <option value="apk_url">APK Download URL</option>
-                  <option value="hash">APK Hash (SHA256)</option>
+                  <option value="all">All Ingestion Vectors</option>
+                  <option value="play_url">Play Store</option>
+                  <option value="apk_upload">APK Upload</option>
+                  <option value="package_name">Package ID</option>
+                  <option value="apk_url">Direct URL</option>
+                  <option value="hash">SHA-256</option>
                 </select>
 
-                {/* Status Filter */}
                 <select
-                  value={statusFilter}
+                  value={timeRange}
                   onChange={(e) => {
-                    setStatusFilter(e.target.value);
+                    setTimeRange(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="clay-btn-soft px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 border border-slate-200/80 focus:outline-none cursor-pointer"
+                  className="h-8 px-2.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 focus:outline-none"
                 >
-                  <option value="all">All Status</option>
-                  <option value="completed">Completed</option>
+                  <option value="all_time">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="past_7d">Past 7 Days</option>
+                  <option value="past_30d">Past 30 Days</option>
                 </select>
 
-                {/* Sort Dropdown */}
-                <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
-                  <span className="shrink-0 text-slate-400">Sort by</span>
-                  <select
-                    value={sortOption}
-                    onChange={(e) => {
-                      setSortOption(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="clay-btn-soft px-3 py-2 rounded-xl text-xs font-extrabold text-slate-700 border border-slate-200/80 focus:outline-none cursor-pointer"
+                {selectedIds.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowBatchConfirm(true)}
+                    className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer shadow-xs animate-in fade-in"
+                    title="Delete selected applications"
                   >
-                    <option value="newest">Newest First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="highest_risk">Highest Risk</option>
-                    <option value="lowest_risk">Lowest Risk</option>
-                    <option value="alpha">App Name A-Z</option>
-                  </select>
-                </div>
+                    <Trash2 size={13} />
+                    <span>Delete Selected ({selectedIds.size})</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Bulk Selection Bar if any checked */}
+            {/* Bulk Selection Ribbon */}
             {selectedIds.size > 0 && (
-              <div className="mb-4 p-3 rounded-2xl bg-violet-50/90 border border-violet-200/80 flex items-center justify-between animate-in fade-in duration-200">
-                <span className="text-xs font-extrabold text-violet-900">
-                  {selectedIds.size} {selectedIds.size === 1 ? "application" : "applications"} selected
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-between text-xs animate-in fade-in">
+                <span className="font-semibold text-rose-900">
+                  {selectedIds.size} {selectedIds.size === 1 ? "record" : "records"} selected for deletion
                 </span>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      const selectedScans = scans.filter((s) => selectedIds.has(s.scan_id));
-                      exportToCsv(selectedScans);
-                    }}
-                    className="clay-btn-purple px-3 py-1.5 rounded-xl text-xs font-extrabold text-white flex items-center gap-1.5"
+                    type="button"
+                    onClick={() => setShowBatchConfirm(true)}
+                    disabled={isDeleting}
+                    className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
                   >
-                    <Download size={13} /> Export Selected (CSV)
+                    <Trash2 size={11} />
+                    Delete Selected
                   </button>
                   <button
+                    type="button"
                     onClick={() => setSelectedIds(new Set())}
-                    className="clay-btn-soft px-3 py-1.5 rounded-xl text-xs font-extrabold text-slate-600 flex items-center gap-1"
+                    className="px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[11px] font-semibold cursor-pointer"
                   >
-                    <X size={13} /> Clear
+                    Clear Selection
                   </button>
                 </div>
               </div>
@@ -699,10 +690,10 @@ export default function ScanHistoryPage() {
 
             {/* Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-left text-slate-400 text-xs font-extrabold border-b border-slate-200/80">
-                    <th className="py-3.5 px-4 w-10">
+                  <tr className="text-left text-slate-500 font-semibold border-b border-slate-200">
+                    <th className="py-2.5 px-3 w-8">
                       <input
                         type="checkbox"
                         checked={paginatedScans.length > 0 && paginatedScans.every((s) => selectedIds.has(s.scan_id))}
@@ -717,58 +708,25 @@ export default function ScanHistoryPage() {
                             setSelectedIds(next);
                           }
                         }}
-                        className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                       />
                     </th>
-                    <th className="py-3.5 px-4 font-extrabold">App Information</th>
-                    <th className="py-3.5 px-4 font-extrabold">Input Method</th>
-                    <th
-                      className="py-3.5 px-4 font-extrabold cursor-pointer hover:text-slate-700 select-none"
-                      onClick={() => setSortOption(sortOption === "newest" ? "oldest" : "newest")}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        Scan Date {sortOption === "oldest" ? "↑" : "↓"}
-                      </span>
-                    </th>
-                    <th
-                      className="py-3.5 px-4 font-extrabold cursor-pointer hover:text-slate-700 select-none"
-                      onClick={() => setSortOption(sortOption === "highest_risk" ? "lowest_risk" : "highest_risk")}
-                    >
-                      Risk Score
-                    </th>
-                    <th className="py-3.5 px-4 font-extrabold">Risk Level</th>
-                    <th className="py-3.5 px-4 font-extrabold">Status</th>
-                    <th className="py-3.5 px-4 font-extrabold text-center">Actions</th>
+                    <th className="py-2.5 px-3">Target Application</th>
+                    <th className="py-2.5 px-3">Ingestion Method</th>
+                    <th className="py-2.5 px-3">Scan Timestamp</th>
+                    <th className="py-2.5 px-3">Risk Index</th>
+                    <th className="py-2.5 px-3">Threat Tier</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedScans.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-16 text-center">
-                        <div className="flex flex-col items-center justify-center max-w-md mx-auto">
-                          <div className="w-14 h-14 rounded-2xl bg-violet-100/70 text-violet-600 border border-violet-200/50 flex items-center justify-center mb-3 shadow-inner">
-                            <History size={26} />
-                          </div>
-                          <div className="text-sm font-black text-slate-900 mb-1">
-                            {scans.length === 0
-                              ? `No scans found for ${currentUsername}`
-                              : "No scan records match your filter criteria"}
-                          </div>
-                          <p className="text-xs text-slate-500 mb-4 text-center leading-relaxed">
-                            {scans.length === 0
-                              ? "You haven't scanned any apps with this account yet. Scan an app from Google Play or upload an APK to see its security risk analysis here."
-                              : "Try adjusting your search query, risk filters, or date range."}
-                          </p>
-                          {scans.length === 0 && (
-                            <button
-                              type="button"
-                              onClick={() => router.push("/new-scan")}
-                              className="clay-btn-purple px-4 py-2 rounded-xl text-xs font-extrabold text-white shadow-md shadow-violet-500/20 hover:shadow-violet-400 transition-all cursor-pointer"
-                            >
-                              Start New Scan
-                            </button>
-                          )}
-                        </div>
+                      <td colSpan={8} className="py-12 text-center text-slate-500">
+                        <History size={20} className="mx-auto mb-2 text-slate-300" />
+                        <p className="font-semibold text-slate-800">No scan dossiers found</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Submit an Android package to start building your threat database.</p>
                       </td>
                     </tr>
                   ) : (
@@ -783,12 +741,11 @@ export default function ScanHistoryPage() {
                       return (
                         <tr
                           key={s.scan_id}
-                          className={`border-b border-slate-100/90 transition-colors ${
-                            isSelected ? "bg-violet-50/60" : "hover:bg-slate-50/70"
+                          className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${
+                            isSelected ? "bg-blue-50/40" : ""
                           }`}
                         >
-                          {/* Checkbox */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3 px-3">
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -798,160 +755,90 @@ export default function ScanHistoryPage() {
                                 else next.delete(s.scan_id);
                                 setSelectedIds(next);
                               }}
-                              className="w-4 h-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                             />
                           </td>
 
-                          {/* App Information */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3 px-3">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/80 shadow-sm flex items-center justify-center shrink-0">
+                              <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
                                 {s.app_icon ? (
-                                  <img
-                                    src={s.app_icon}
-                                    alt={s.app_name}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                      (e.target as HTMLElement).style.display = "none";
-                                    }}
-                                  />
+                                  <img src={s.app_icon} alt="" className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className="text-xs font-black text-slate-700">{initials}</span>
+                                  <span className="font-bold text-slate-600 text-[10px]">{initials}</span>
                                 )}
                               </div>
-                              <div className="truncate max-w-[220px]">
+                              <div className="truncate max-w-[240px]">
                                 <div
                                   onClick={() => router.push(`/dashboard?scan_id=${s.scan_id}`)}
-                                  className="font-extrabold text-slate-900 text-xs hover:text-violet-600 cursor-pointer truncate transition-colors"
+                                  className="font-semibold text-slate-900 hover:text-blue-600 cursor-pointer truncate transition-colors"
                                 >
-                                  {s.app_name}
+                                  {s.app_name || s.package_name}
                                 </div>
-                                <div className="text-[11px] font-medium text-slate-400 truncate">{s.package_name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono truncate">{s.package_name}</div>
                               </div>
                             </div>
                           </td>
 
-                          {/* Input Method */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-7 h-7 rounded-lg ${methodMeta.bg} border flex items-center justify-center shrink-0`}>
-                                <MethodIcon size={14} className={methodMeta.iconColor} />
-                              </div>
-                              <span className="text-xs font-bold text-slate-700">{methodMeta.label}</span>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-1.5">
+                              <MethodIcon size={13} className={methodMeta.iconColor} />
+                              <span className="text-slate-600 font-medium">{methodMeta.label}</span>
                             </div>
                           </td>
 
-                          {/* Scan Date */}
-                          <td className="py-3.5 px-4">
-                            <div>
-                              <div className="text-xs font-bold text-slate-800">{dateMeta.date}</div>
-                              <div className="text-[11px] font-medium text-slate-400">{dateMeta.time}</div>
-                            </div>
+                          <td className="py-3 px-3 font-mono text-slate-600">
+                            <div>{dateMeta.date}</div>
+                            <div className="text-[10px] text-slate-400">{dateMeta.time}</div>
                           </td>
 
-                          {/* Risk Score */}
-                          <td className="py-3.5 px-4">
-                            <span className={`text-sm font-black ${riskMeta.scoreColor}`}>{s.overall_risk_score}</span>
-                            <span className="text-xs font-bold text-slate-400"> / 100</span>
+                          <td className="py-3 px-3 font-mono font-bold">
+                            <span className={riskMeta.scoreColor}>{s.overall_risk_score}</span>
+                            <span className="text-slate-400 font-normal">/100</span>
                           </td>
 
-                          {/* Risk Level */}
-                          <td className="py-3.5 px-4">
-                            <span className={`inline-block px-3 py-0.5 rounded-full text-xs font-extrabold ${riskMeta.badgeClass}`}>
+                          <td className="py-3 px-3">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${riskMeta.badgeClass}`}>
                               {riskMeta.level}
                             </span>
                           </td>
 
-                          {/* Status */}
-                          <td className="py-3.5 px-4">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[11px] font-extrabold">
-                              <CheckCircle2 size={12} className="text-emerald-600" />
-                              Completed
+                          <td className="py-3 px-3">
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
+                              <CheckCircle2 size={11} className="text-emerald-600" />
+                              Analyzed
                             </span>
                           </td>
 
-                          {/* Actions: 3 buttons */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center justify-center gap-1.5 relative">
-                              {/* 1. PDF Report */}
+                          <td className="py-3 px-3">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/dashboard?scan_id=${s.scan_id}`)}
+                                title="Target Application (Open Dossier)"
+                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                              >
+                                <BarChart2 size={14} />
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => window.open(api.downloadPdfReport(s.scan_id), "_blank")}
                                 title="Download PDF Report"
-                                className="w-8 h-8 rounded-xl bg-white border border-slate-200/80 hover:border-violet-400 text-slate-500 hover:text-violet-600 flex items-center justify-center shadow-sm transition-all cursor-pointer"
+                                className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                               >
                                 <FileText size={14} />
                               </button>
-
-                              {/* 2. Dashboard Analytics */}
-                              <button
-                                type="button"
-                                onClick={() => router.push(`/dashboard?scan_id=${s.scan_id}`)}
-                                title="View Full Dashboard Analysis"
-                                className="w-8 h-8 rounded-xl bg-white border border-slate-200/80 hover:border-violet-400 text-slate-500 hover:text-violet-600 flex items-center justify-center shadow-sm transition-all cursor-pointer"
-                              >
-                                <BarChart2 size={14} />
-                              </button>
-
-                              {/* 3. More Options */}
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setActiveMenuId(activeMenuId === s.scan_id ? null : s.scan_id);
+                                  setItemToDelete({ id: s.scan_id, name: s.app_name || s.package_name });
                                 }}
-                                title="More Options"
-                                className="w-8 h-8 rounded-xl bg-white border border-slate-200/80 hover:border-violet-400 text-slate-500 hover:text-violet-600 flex items-center justify-center shadow-sm transition-all cursor-pointer"
+                                title="Delete Application Dossier"
+                                className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                               >
-                                <MoreHorizontal size={14} />
+                                <Trash2 size={14} />
                               </button>
-
-                              {/* Dropdown Menu */}
-                              {activeMenuId === s.scan_id && (
-                                <div
-                                  className="absolute right-0 top-10 w-48 bg-white rounded-2xl border border-slate-200 shadow-xl py-1.5 z-40 animate-in fade-in zoom-in duration-150"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      router.push(`/dashboard?scan_id=${s.scan_id}`);
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <BarChart2 size={13} className="text-violet-600" /> View Analysis
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      window.open(api.downloadPdfReport(s.scan_id), "_blank");
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <FileText size={13} className="text-blue-600" /> Download PDF
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      navigator.clipboard.writeText(s.scan_id);
-                                      alert("Scan ID copied to clipboard!");
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Copy size={13} className="text-emerald-600" /> Copy Scan ID
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setActiveMenuId(null);
-                                      navigator.clipboard.writeText(s.package_name);
-                                      alert("Package name copied to clipboard!");
-                                    }}
-                                    className="w-full px-3.5 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
-                                  >
-                                    <Copy size={13} className="text-amber-600" /> Copy Package
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           </td>
                         </tr>
@@ -962,59 +849,31 @@ export default function ScanHistoryPage() {
               </table>
             </div>
 
-            {/* Pagination Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-4 mt-6 pt-4 border-t border-slate-100">
-              <div className="text-xs font-bold text-slate-500">
+            {/* Pagination */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+              <div>
                 Showing {filteredScans.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
                 -
-                {Math.min(currentPage * pageSize, filteredScans.length)} of {filteredScans.length} scans
+                {Math.min(currentPage * pageSize, filteredScans.length)} of {filteredScans.length} dossiers
               </div>
 
-              <div className="flex items-center gap-1.5">
-                {/* Previous */}
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="w-8 h-8 rounded-xl clay-btn-soft text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs font-black cursor-pointer"
+                  className="px-2 py-1 rounded bg-white border border-slate-200 text-slate-600 disabled:opacity-40 hover:bg-slate-50"
                 >
-                  «
+                  Previous
                 </button>
-
-                {/* Page Numbers */}
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
-                  .reduce<(number | string)[]>((acc, p, idx, arr) => {
-                    if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
-                    acc.push(p);
-                    return acc;
-                  }, [])
-                  .map((p, idx) =>
-                    p === "..." ? (
-                      <span key={`dots-${idx}`} className="px-2 text-slate-400 font-bold text-xs">
-                        ...
-                      </span>
-                    ) : (
-                      <button
-                        key={`page-${p}`}
-                        onClick={() => setCurrentPage(p as number)}
-                        className={`w-8 h-8 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                          currentPage === p
-                            ? "bg-violet-600 text-white shadow-md"
-                            : "clay-btn-soft text-slate-700 hover:text-slate-900"
-                        }`}
-                      >
-                        {p}
-                      </button>
-                    )
-                  )}
-
-                {/* Next */}
+                <span className="px-2 font-mono">
+                  {currentPage} / {totalPages}
+                </span>
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage >= totalPages}
-                  className="w-8 h-8 rounded-xl clay-btn-soft text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs font-black cursor-pointer"
+                  className="px-2 py-1 rounded bg-white border border-slate-200 text-slate-600 disabled:opacity-40 hover:bg-slate-50"
                 >
-                  »
+                  Next
                 </button>
               </div>
             </div>
@@ -1023,6 +882,88 @@ export default function ScanHistoryPage() {
 
         </div>
       </main>
+
+      {/* Single Item Delete Confirmation Modal */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-5 border border-slate-200 shadow-xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Delete Scan Dossier</h3>
+                <p className="text-xs text-slate-500">Remove record from database and audit log</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              Are you sure you want to permanently delete the audit record for <strong className="text-slate-900 font-semibold">{itemToDelete.name}</strong>?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                disabled={isDeleting}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDeleteSingle(itemToDelete.id, itemToDelete.name)}
+                disabled={isDeleting}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <Trash2 size={13} />
+                <span>{isDeleting ? "Deleting..." : "Delete Record"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {showBatchConfirm && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-5 border border-slate-200 shadow-xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-100">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Delete Selected Dossiers</h3>
+                <p className="text-xs text-slate-500">Remove multiple records from database</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              Are you sure you want to permanently delete <strong className="text-slate-900 font-semibold">{selectedIds.size} selected scan {selectedIds.size === 1 ? "record" : "records"}</strong>?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchConfirm(false)}
+                disabled={isDeleting}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeBatchDelete}
+                disabled={isDeleting}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <Trash2 size={13} />
+                <span>{isDeleting ? "Deleting..." : `Delete ${selectedIds.size} Records`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

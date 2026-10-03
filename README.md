@@ -28,7 +28,7 @@ risk output.
 appshield-ai/
   backend/
     app/
-      db/          Postgres and Mongo connections
+      db/          MongoDB connection (scans, reports, users)
       fusion/      feature-vector builder
       ml/          training, registry, SHAP/fallback explanations
       modules/     independent risk modules
@@ -45,7 +45,7 @@ appshield-ai/
 
 - Node.js 18+.
 - Python 3.11 or 3.12 recommended. Python 3.13 may not have compatible wheels for every ML dependency.
-- Docker Desktop, if you want the bundled Postgres, MongoDB, and Redis services.
+- MongoDB (Community Server / Service running locally on port 27017 or a MongoDB Atlas URI).
 
 On Windows PowerShell, prefer `npm.cmd` instead of `npm` if script execution is disabled.
 
@@ -57,10 +57,13 @@ Open a terminal in this folder:
 cd D:\Vs_Code_Workspace\fraud-app-detector\appshield-ai
 ```
 
-Start databases:
+Make sure your local MongoDB service is running:
 
 ```powershell
-docker compose up -d
+# E.g. on Windows
+Get-Service -Name MongoDB
+# or start it if stopped:
+# Start-Service -Name MongoDB
 ```
 
 Create backend environment:
@@ -97,7 +100,7 @@ cd D:\Vs_Code_Workspace\fraud-app-detector\appshield-ai
 
 This starts:
 
-- Docker Compose services: Postgres, MongoDB, Redis
+- Local MongoDB verification (port 27017)
 - Backend API: `http://localhost:8000`
 - Frontend app: `http://localhost:3000`
 
@@ -113,11 +116,11 @@ http://localhost:3000
 
 Use these commands only if you want to run each part yourself.
 
-Terminal 1 - databases:
+Terminal 1 - database (if not running as a Windows service):
 
 ```powershell
-cd D:\Vs_Code_Workspace\fraud-app-detector\appshield-ai
-docker compose up -d
+# Verify MongoDB status
+net start MongoDB
 ```
 
 Terminal 2 - backend:
@@ -172,10 +175,11 @@ password: admin123
 Change `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `SECRET_KEY` in `backend/.env`
 before using this outside local development.
 
-The default local Postgres URL is:
+The default local MongoDB database URL is:
 
 ```text
-POSTGRES_URL=postgresql+psycopg://appshield:appshield@localhost:5432/appshield
+MONGO_URL=mongodb://localhost:27017
+MONGO_DB=appshield_reports
 ```
 
 ## Model Training
@@ -230,5 +234,5 @@ npm.cmd run build
 - Replace synthetic `datasets/combined/processed/training_data.csv` with a real fused dataset.
 - Add trusted icon files under `datasets/icons/raw` and trusted screenshots under `datasets/screenshots/raw` for stronger clone detection.
 - Use a production secret key and non-default admin credentials.
-- Use managed Postgres, MongoDB, and Redis or secure the Docker services.
+- Use managed MongoDB (e.g. MongoDB Atlas) or secure the local MongoDB instance with authentication.
 - Play Store scraping can be fragile; for production scale, use a licensed app-intelligence API or an official integration where possible.
