@@ -140,7 +140,7 @@ def download_apk(
                 r.raise_for_status()
                 _stream_to_file(r, dest, deadline, progress_callback)
             return dest
-        except (requests.exceptions.SSLError, requests.exceptions.CertificateError):
+        except requests.exceptions.SSLError:
             logger.warning(f"SSL verification failed for {url}, retrying without verification")
             with session.get(url, stream=True, timeout=(25, 60), headers=headers, verify=False, allow_redirects=True) as r:
                 r.raise_for_status()
@@ -159,6 +159,32 @@ def sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def cleanup(path: Path):
-    if path.exists():
-        path.unlink()
+def cleanup(path: Optional[Path]):
+    if not path:
+        return
+    try:
+        p = Path(path)
+        if p.exists() and p.is_file():
+            p.unlink()
+            logger.info(f"Sandbox security: Temporary APK binary {p.name} permanently deleted from disk.")
+    except Exception as exc:
+        logger.warning(f"Error while cleaning up temporary APK {path}: {exc}")
+
+
+def purge_old_temp_apks(max_age_seconds: int = 120):
+    """Purges any orphan temporary APK files older than max_age_seconds."""
+    try:
+        temp_dir = settings.TEMP_APK_DIR
+        if not temp_dir.exists():
+            return
+        now = time.time()
+        for f in temp_dir.iterdir():
+            if f.is_file() and f.suffix == ".apk":
+                try:
+                    if now - f.stat().st_mtime > max_age_seconds:
+                        f.unlink()
+                        logger.info(f"Purged orphan temporary APK: {f.name}")
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.warning(f"Failed to run orphan APK purge: {exc}")

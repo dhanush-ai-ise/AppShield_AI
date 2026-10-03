@@ -391,24 +391,47 @@ function DashboardContent() {
     setIsScanningBackend(true);
     setScanStatusMessage("Connecting to AppShield Threat Engine...");
 
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
     try {
       let resultScan: ScanResult;
 
       if (uploadedFile) {
         setScanStatusMessage(`Uploading and decompiling ${uploadedFile.name}...`);
         resultScan = await api.scanApkUpload(uploadedFile);
-      } else if (input.includes("play.google.com") || input.includes("id=")) {
-        setScanStatusMessage("Querying Google Play Store metadata and telemetry...");
-        resultScan = await api.scanPlayUrl(input);
-      } else if (input.includes("http://") || input.includes("https://")) {
-        setScanStatusMessage("Downloading remote APK binary package...");
-        resultScan = await api.scanApkUrl(input);
-      } else if (input.length === 64 && /^[a-fA-F0-9]+$/.test(input)) {
-        setScanStatusMessage("Querying cryptographic SHA-256 database...");
-        resultScan = await api.scanByHash(input);
       } else {
-        setScanStatusMessage(`Querying package identifier ${input}...`);
-        resultScan = await api.scanPackageName(input);
+        const isPlayStore = input.includes("play.google.com") || input.startsWith("market://details");
+        const isUrl = input.startsWith("http://") || input.startsWith("https://");
+        const isHash = input.length === 64 && /^[a-fA-F0-9]+$/.test(input);
+
+        if (isPlayStore) {
+          setScanStatusMessage("Querying Google Play Store metadata and telemetry...");
+          resultScan = await api.scanPlayUrl(input);
+        } else if (isUrl) {
+          const trackerId = `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          setScanStatusMessage("Connecting to remote APK server...");
+
+          pollTimer = setInterval(async () => {
+            try {
+              const prog = await api.getApkDownloadProgress(trackerId);
+              if (prog && prog.message) {
+                setScanStatusMessage(prog.message);
+              }
+            } catch {}
+          }, 500);
+
+          try {
+            resultScan = await api.scanApkUrl(input, undefined, trackerId);
+          } finally {
+            if (pollTimer) clearInterval(pollTimer);
+          }
+        } else if (isHash) {
+          setScanStatusMessage("Querying cryptographic SHA-256 database...");
+          resultScan = await api.scanByHash(input);
+        } else {
+          setScanStatusMessage(`Querying package identifier ${input}...`);
+          resultScan = await api.scanPackageName(input);
+        }
       }
 
       if (resultScan && resultScan.scan_id) {
@@ -425,6 +448,7 @@ function DashboardContent() {
     } catch (err: any) {
       alert(`Scan failed: ${err.message || "Threat engine connection error."}`);
     } finally {
+      if (pollTimer) clearInterval(pollTimer);
       setIsScanningBackend(false);
       setScanStatusMessage("");
     }
@@ -595,7 +619,7 @@ function DashboardContent() {
                 type="text"
                 value={newScanInput}
                 onChange={(e) => setNewScanInput(e.target.value)}
-                placeholder="Scan target: Play Store URL, package name (e.g. com.spotify.music), or SHA-256..."
+                placeholder="Scan target: Direct APK link (mod / off-store), Play Store URL, package ID, or SHA-256..."
                 className="w-full h-8 pl-8 pr-20 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
               />
               <div className="absolute right-1 flex items-center gap-1">
@@ -758,8 +782,13 @@ function DashboardContent() {
                             v{activeScan.version || "1.0.0"}
                           </span>
                           <span className="text-[11px] text-slate-500 font-mono">
-                            Target SDK 34 • {activeScan.input_type || "Play Store"}
+                            Target SDK {activeScan.metadata?.target_sdk || activeScan.metadata?.targetSdk || 34} • {activeScan.input_type === "apk_url" ? "Direct APK Download" : activeScan.input_type === "apk_upload" ? "APK Binary Upload" : activeScan.input_type || "Play Store"}
                           </span>
+                          {(activeScan.input_type === "apk_url" || activeScan.input_type === "apk_upload") && (
+                            <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded font-mono flex items-center gap-1 font-semibold" title="Temporary APK binary securely decompiled and deleted from disk">
+                              <span>✓</span> Sandbox Binary Purged (Zero Storage)
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

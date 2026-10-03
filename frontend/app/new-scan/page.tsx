@@ -27,10 +27,19 @@ interface TabMeta {
 
 const TABS: TabMeta[] = [
   {
+    key: "apk_url",
+    title: "Direct Download Link",
+    subtitle: "Mod APKs, Unofficial & Off-Store Apps",
+    placeholder: "https://example.com/builds/app.apk or direct download URL",
+    inputLabel: "Direct Remote APK Download Link",
+    inputHelp: "Downloads the application package, decompiles Dalvik bytecode & permissions, runs threat detection, and permanently deletes the binary from disk.",
+    icon: Link2,
+  },
+  {
     key: "play_url",
     title: "Google Play Store",
-    subtitle: "Public Play Store URL",
-    placeholder: "https://play.google.com/store/apps/details?id=com.spotify.music",
+    subtitle: "Official store listing",
+    placeholder: "https://play.google.com/store/apps/details?id=com.spotify.music or com.spotify.music",
     inputLabel: "Google Play Store Target URL",
     inputHelp: "Scrapes official store metadata, reviews, developer credentials, and downloads APK.",
     icon: Play,
@@ -38,10 +47,10 @@ const TABS: TabMeta[] = [
   {
     key: "apk_upload",
     title: "Upload APK Binary",
-    subtitle: "Local .apk package file",
+    subtitle: "Local .apk package file (Mod / Custom)",
     placeholder: "Select or drop .apk file",
     inputLabel: "Android APK Binary Package",
-    inputHelp: "Upload compiled Android package binary (up to 500MB) for Dalvik bytecode extraction.",
+    inputHelp: "Upload compiled Android package binary (up to 500MB) for Dalvik bytecode extraction. File is deleted immediately after scanning.",
     icon: Upload,
   },
   {
@@ -52,15 +61,6 @@ const TABS: TabMeta[] = [
     inputLabel: "Application Package Namespace",
     inputHelp: "Queries threat intelligence database and catalogs for the unique Android package ID.",
     icon: Package,
-  },
-  {
-    key: "apk_url",
-    title: "Direct Download URL",
-    subtitle: "Remote HTTP / HTTPS link",
-    placeholder: "https://cdn.example.com/builds/app-release.apk",
-    inputLabel: "Direct Remote APK URL",
-    inputHelp: "Fetches binary stream over secure HTTPS and pipes into decompiler sandbox.",
-    icon: Link2,
   },
   {
     key: "hash",
@@ -75,7 +75,7 @@ const TABS: TabMeta[] = [
 
 export default function NewScanPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("play_url");
+  const [tab, setTab] = useState<Tab>("apk_url");
   const [value, setValue] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,54 +114,66 @@ export default function NewScanPage() {
 
     try {
       let result;
-      if (tab === "play_url") {
-        if (!value.includes("/store/apps/details") || !value.includes("id=")) {
-          throw new Error(NEW_SCAN.errors.invalidPlayUrl);
-        }
-        result = await api.scanPlayUrl(value, selectedModel);
-      } else if (tab === "package_name") {
-        result = await api.scanPackageName(value, selectedModel);
-      } else if (tab === "apk_url") {
-        const trackerId = `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        setDownloadProgress({
-          percent: 5,
-          message: "Connecting to remote APK server...",
-          status: "connecting",
-        });
+      const trimmed = value.trim();
 
-        let elapsed = 0;
-        pollTimer = setInterval(async () => {
-          elapsed += 0.5;
-          try {
-            const prog = await api.getApkDownloadProgress(trackerId);
-            if (prog && prog.message) {
-              if (prog.status === "error") {
-                setError(prog.message);
-              }
-              setDownloadProgress({
-                percent: prog.percent ?? 0,
-                message: prog.message,
-                downloadedMb: prog.downloaded_mb,
-                totalMb: prog.total_mb,
-                status: prog.status,
-              });
-            } else if (elapsed > 2) {
-              setDownloadProgress((prev) => ({
-                percent: prev?.percent || 5,
-                message: `Negotiating stream (${Math.round(elapsed)}s)...`,
-                status: "connecting",
-              }));
-            }
-          } catch {}
-        }, 500);
-
-        result = await api.scanApkUrl(value, selectedModel, trackerId);
-      } else if (tab === "apk_upload" && file) {
+      if (tab === "apk_upload" || file) {
+        if (!file) throw new Error("Please select an APK file to upload.");
         result = await api.scanApkUpload(file, selectedModel);
-      } else if (tab === "hash") {
-        result = await api.scanByHash(value, selectedModel);
-      } else {
+      } else if (!trimmed) {
         throw new Error(NEW_SCAN.errors.noInput);
+      } else {
+        const isPlayStore = trimmed.includes("play.google.com") || trimmed.startsWith("market://details");
+        const isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://");
+        const isHash = trimmed.length === 64 && /^[a-fA-F0-9]+$/.test(trimmed);
+
+        if (isHash) {
+          result = await api.scanByHash(trimmed, selectedModel);
+        } else if (isPlayStore) {
+          result = await api.scanPlayUrl(trimmed, selectedModel);
+        } else if (isUrl) {
+          // Direct APK URL (mod / non-store / unofficial)
+          const trackerId = `track-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          setDownloadProgress({
+            percent: 5,
+            message: "Connecting to remote APK server...",
+            status: "connecting",
+          });
+
+          let elapsed = 0;
+          pollTimer = setInterval(async () => {
+            elapsed += 0.5;
+            try {
+              const prog = await api.getApkDownloadProgress(trackerId);
+              if (prog && prog.message) {
+                if (prog.status === "error") {
+                  setError(prog.message);
+                }
+                setDownloadProgress({
+                  percent: prog.percent ?? 0,
+                  message: prog.message,
+                  downloadedMb: prog.downloaded_mb,
+                  totalMb: prog.total_mb,
+                  status: prog.status,
+                });
+              } else if (elapsed > 2) {
+                setDownloadProgress((prev) => ({
+                  percent: prev?.percent || 5,
+                  message: `Negotiating stream (${Math.round(elapsed)}s)...`,
+                  status: "connecting",
+                }));
+              }
+            } catch {}
+          }, 500);
+
+          try {
+            result = await api.scanApkUrl(trimmed, selectedModel, trackerId);
+          } finally {
+            if (pollTimer) clearInterval(pollTimer);
+          }
+        } else {
+          // Package identifier
+          result = await api.scanPackageName(trimmed, selectedModel);
+        }
       }
 
       if (result) {

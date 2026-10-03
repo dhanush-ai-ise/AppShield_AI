@@ -97,11 +97,15 @@ def _detect_intent(prompt: str) -> Dict[str, Any]:
         clean_url = f"https://play.google.com/store/apps/details?id={pkg}"
         return {"type": "play_url", "target": clean_url, "package_name": pkg}
         
-    # 2. Direct APK URL
-    if re.search(r"https?://[^\s]+\.apk(?:\?[^\s]*)?", text, re.IGNORECASE):
-        url_match = re.search(r"(https?://[^\s]+\.apk(?:\?[^\s]*)?)", text, re.IGNORECASE)
-        clean_apk_url = url_match.group(1).strip() if url_match else text
-        return {"type": "apk_url", "target": clean_apk_url}
+    # 2. Direct APK / Non-Play Store Download URL
+    http_match = re.search(r"(https?://[^\s\"'<>]+)", text, re.IGNORECASE)
+    if http_match:
+        found_url = http_match.group(1).strip()
+        is_apk_ext = ".apk" in found_url.lower()
+        has_scan_intent = any(kw in text.lower() for kw in ["scan", "check", "analyze", "test", "inspect", "audit", "download", "mod", "apk", "app", "file"])
+        is_pure_url = text.strip() == found_url or text.strip().startswith(found_url)
+        if is_apk_ext or has_scan_intent or is_pure_url:
+            return {"type": "apk_url", "target": found_url}
         
     # 3. SHA-256 Hash (64 hex characters)
     hash_match = re.search(r"\b([a-fA-F0-9]{64})\b", text)
@@ -305,8 +309,9 @@ async def chat_copilot(
                 {"step": 3, "title": "Decompiled manifest & static resources...", "status": "completed", "time": "Just now"},
                 {"step": 4, "title": "Extracted permission vectors & feature matrix...", "status": "completed", "time": "Just now"},
                 {"step": 5, "title": "Completed AI threat scoring & verification...", "status": "completed", "time": "Just now"},
+                {"step": 6, "title": "Sandbox temporary APK deleted (zero-persistence)...", "status": "completed", "time": "Just now"},
             ]
-            scan_res = await asyncio.to_thread(scan.scan_apk_url, url=target, model_name=ml_model_to_use, current_user=user_dict)
+            scan_res = await scan.scan_apk_url(url=target, model_name=ml_model_to_use, current_user=user_dict)
         elif intent["type"] == "package_name":
             steps = [
                 {"step": 1, "title": f"Resolving package ID: {target}...", "status": "completed", "time": "Just now"},

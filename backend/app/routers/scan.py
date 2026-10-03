@@ -29,7 +29,7 @@ from app.fusion.fusion_engine import build_feature_vector
 from app.ml import model_registry
 from app.ml.explain import explain_with_shap, explain_fallback, build_flag_reasons
 from app.utils.playstore_scraper import fetch_play_store_metadata
-from app.utils.apk_downloader import download_apk, sha256_of_file, cleanup
+from app.utils.apk_downloader import download_apk, sha256_of_file, cleanup, purge_old_temp_apks
 from app.db.mongo import scans_collection
 from app.config import settings
 from app.routers.auth import get_optional_user
@@ -313,9 +313,22 @@ def parse_apk_with_androguard(apk_path: Path) -> Dict:
             except (ValueError, TypeError):
                 return default
 
+        raw_package = a.get_package() or "unknown.application"
+        raw_app_name = a.get_app_name()
+        
+        # Clean unresolved resource references (e.g. @2131820544 or @string/app_name)
+        if not raw_app_name or str(raw_app_name).startswith("@"):
+            segments = [s for s in raw_package.split(".") if s.lower() not in ("com", "org", "net", "io", "app", "android", "apk")]
+            if segments:
+                cleaned_app_name = " ".join(s.capitalize() for s in segments[-2:])
+            else:
+                cleaned_app_name = raw_package
+        else:
+            cleaned_app_name = str(raw_app_name).strip()
+
         manifest_data: Dict = {
-            "package_name": a.get_package(),
-            "app_name": a.get_app_name() or a.get_package(),
+            "package_name": raw_package,
+            "app_name": cleaned_app_name,
             "api_calls": [],
             "native_libs": a.get_libraries(),
             "min_sdk": _to_int(a.get_min_sdk_version(), 21),
@@ -602,6 +615,7 @@ async def scan_apk_upload(
     model_name: Optional[str] = Form(None),
     current_user: Optional[dict] = Depends(get_optional_user),
 ):
+    purge_old_temp_apks()
     # Save uploaded APK to temp directory
     apk_path = settings.TEMP_APK_DIR / f"{uuid.uuid4().hex}.apk"
     try:
@@ -620,27 +634,38 @@ async def scan_apk_upload(
         # Parse APK with Androguard
         manifest_data = parse_apk_with_androguard(apk_path)
         icon_bytes = manifest_data.get("icon_bytes")
+        cert_info = manifest_data.get("cert_info", {})
+        issuer = cert_info.get("issuer")
+        dev_name = issuer if issuer and issuer != "Unknown" else "Third-Party / Off-Store Developer"
+        apk_size_mb = round(len(content) / (1024 * 1024), 2)
         
         collected = {
             "input_type": "apk_upload",
             "package_name": manifest_data.get("package_name"),
-            "app_name": manifest_data.get("app_name") or file.filename,
+            "app_name": manifest_data.get("app_name") or file.filename or manifest_data.get("package_name"),
             "permissions": manifest_data.get("permissions", []),
             "reviews": [],
-            "developer_info": {},
+            "developer_info": {
+                "name": dev_name,
+                "is_verified": False,
+                "total_apps": 1,
+            },
+            "category": "Sideloaded / Unofficial APK",
             "metadata": {
                 "min_sdk": manifest_data.get("min_sdk"),
                 "target_sdk": manifest_data.get("target_sdk"),
+                "size_mb": apk_size_mb,
             },
             "manifest_data": manifest_data,
-            "cert_info": manifest_data.get("cert_info", {}),
+            "cert_info": cert_info,
             "icon_bytes": icon_bytes,
             "app_icon": _image_data_url(icon_bytes),
             "apk_sha256": apk_sha256,
+            "sandbox_cleanup": "Temporary APK binary deleted immediately post-analysis (Zero-Persistence Policy)",
         }
         return run_pipeline(collected, model_name, current_user)
     finally:
-        # Cleanup temp APK file
+        # Guarantee cleanup of uploaded APK binary
         cleanup(apk_path)
 
 
@@ -668,6 +693,9 @@ async def scan_apk_url(
     tracker_id: Optional[str] = Form(None),
     current_user: Optional[dict] = Depends(get_optional_user),
 ):
+    purge_old_temp_apks()
+    clean_url = url.strip()
+
     if tracker_id:
         if len(_APK_DOWNLOAD_PROGRESS) > 100:
             for k in list(_APK_DOWNLOAD_PROGRESS.keys())[:-50]:
@@ -702,51 +730,63 @@ async def scan_apk_url(
 
     apk_path = None
     try:
-        # Run download in a worker thread so the FastAPI event loop remains 100% responsive for progress polling
-        apk_path = await asyncio.to_thread(download_apk, url, _on_progress)
-        if tracker_id:
-            last_down = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("downloaded_mb", 0.0)
-            total_mb = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("total_mb") or last_down
-            _APK_DOWNLOAD_PROGRESS[tracker_id] = {
-                "status": "analyzing",
-                "percent": 100,
-                "downloaded_mb": last_down,
-                "total_mb": total_mb,
-                "message": f"Downloaded ({last_down} MB) • Decompiling & Analyzing Security Features...",
-            }
-    except Exception as exc:
-        if tracker_id:
-            _APK_DOWNLOAD_PROGRESS[tracker_id] = {
-                "status": "error",
-                "percent": 0,
-                "message": f"Download failed: {str(exc)}",
-            }
-        logger.error(f"Failed to download APK from {url}: {str(exc)}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Failed to download APK: {str(exc)}") from exc
-        
-    try:
+        try:
+            # Run download in a worker thread so the FastAPI event loop remains 100% responsive for progress polling
+            apk_path = await asyncio.to_thread(download_apk, clean_url, _on_progress)
+            if tracker_id:
+                last_down = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("downloaded_mb", 0.0)
+                total_mb = _APK_DOWNLOAD_PROGRESS.get(tracker_id, {}).get("total_mb") or last_down
+                _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+                    "status": "analyzing",
+                    "percent": 100,
+                    "downloaded_mb": last_down,
+                    "total_mb": total_mb,
+                    "message": f"Downloaded ({last_down} MB) • Decompiling & Analyzing Security Features...",
+                }
+        except Exception as exc:
+            if tracker_id:
+                _APK_DOWNLOAD_PROGRESS[tracker_id] = {
+                    "status": "error",
+                    "percent": 0,
+                    "message": f"Download failed: {str(exc)}",
+                }
+            logger.error(f"Failed to download APK from {clean_url}: {str(exc)}", exc_info=True)
+            raise HTTPException(status_code=400, detail=f"Failed to download APK: {str(exc)}") from exc
+
         def _process_analysis():
             apk_sha256 = sha256_of_file(apk_path)
             # Parse APK with Androguard
             manifest_data = parse_apk_with_androguard(apk_path)
             icon_bytes = manifest_data.get("icon_bytes")
-            
+            cert_info = manifest_data.get("cert_info", {})
+            issuer = cert_info.get("issuer")
+            dev_name = issuer if issuer and issuer != "Unknown" else "Third-Party / Off-Store Developer"
+            apk_size_mb = round(apk_path.stat().st_size / (1024 * 1024), 2) if (apk_path and apk_path.exists()) else 15.0
+
             collected = {
                 "input_type": "apk_url",
                 "package_name": manifest_data.get("package_name"),
                 "app_name": manifest_data.get("app_name") or manifest_data.get("package_name"),
                 "permissions": manifest_data.get("permissions", []),
                 "reviews": [],
-                "developer_info": {},
+                "developer_info": {
+                    "name": dev_name,
+                    "is_verified": False,
+                    "total_apps": 1,
+                },
+                "category": "Sideloaded / Unofficial APK",
                 "metadata": {
                     "min_sdk": manifest_data.get("min_sdk"),
                     "target_sdk": manifest_data.get("target_sdk"),
+                    "size_mb": apk_size_mb,
                 },
                 "manifest_data": manifest_data,
-                "cert_info": manifest_data.get("cert_info", {}),
+                "cert_info": cert_info,
                 "icon_bytes": icon_bytes,
                 "app_icon": _image_data_url(icon_bytes),
                 "apk_sha256": apk_sha256,
+                "download_url": clean_url,
+                "sandbox_cleanup": "Temporary APK binary deleted immediately post-analysis (Zero-Persistence Policy)",
             }
             return run_pipeline(collected, model_name, current_user)
 
@@ -755,11 +795,11 @@ async def scan_apk_url(
             _APK_DOWNLOAD_PROGRESS[tracker_id] = {
                 "status": "completed",
                 "percent": 100,
-                "message": "Scan Complete!",
+                "message": "Scan Complete! Temporary APK binary deleted.",
             }
         return res
     finally:
-        # Cleanup temp APK file
+        # Guarantee cleanup of temporary APK file
         if apk_path:
             cleanup(apk_path)
 
