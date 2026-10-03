@@ -66,6 +66,11 @@ def seed_default_users() -> bool:
         pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
         admin_email = f"{settings.ADMIN_USERNAME}@appshield.ai"
 
+        import hashlib
+        analyst_email = "analyst@appshield.ai"
+        admin_avatar = f"https://www.gravatar.com/avatar/{hashlib.md5(admin_email.strip().lower().encode()).hexdigest()}?s=200&d=identicon"
+        analyst_avatar = f"https://www.gravatar.com/avatar/{hashlib.md5(analyst_email.strip().lower().encode()).hexdigest()}?s=200&d=identicon"
+
         # 1. Super Admin User
         users_collection.update_one(
             {"$or": [{"username": settings.ADMIN_USERNAME}, {"email": admin_email}]},
@@ -75,6 +80,7 @@ def seed_default_users() -> bool:
                     "username": settings.ADMIN_USERNAME,
                     "email": admin_email,
                     "full_name": "Security Administrator",
+                    "avatar_url": admin_avatar,
                     "role": "super_admin",
                     "is_admin": True,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -97,6 +103,7 @@ def seed_default_users() -> bool:
                     "username": "analyst",
                     "email": analyst_email,
                     "full_name": "Threat Intelligence Analyst",
+                    "avatar_url": analyst_avatar,
                     "role": "analyst",
                     "is_admin": False,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -108,7 +115,7 @@ def seed_default_users() -> bool:
             },
             upsert=True,
         )
-        logger.info(f"Default user accounts ({admin_email}, {analyst_email}) seeded into MongoDB.")
+        logger.info(f"Default user accounts ({admin_email}, {analyst_email}) seeded with avatars into MongoDB.")
         return True
     except Exception as exc:
         logger.warning(f"Could not seed default users into MongoDB: {exc}")

@@ -55,26 +55,68 @@ export default function Sidebar() {
   const [isMongoOnline, setIsMongoOnline] = useState(true);
   const [mounted, setMounted] = useState(false);
 
+  const [profile, setProfile] = useState<{
+    email?: string;
+    fullName?: string;
+    username?: string;
+    avatarUrl?: string;
+    role?: string;
+  } | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
+
   useEffect(() => {
     setMounted(true);
+    api.getCurrentUser?.()
+      .then((data: any) => {
+        if (data && (data.email || data.avatar_url || data.username)) {
+          setProfile({
+            email: data.email,
+            fullName: data.full_name,
+            username: data.username,
+            avatarUrl: data.avatar_url,
+            role: data.role,
+          });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const adminName = useMemo(() => {
+    if (profile?.fullName) return profile.fullName;
+    if (profile?.username) return profile.username;
     if (!mounted) return "Security Analyst";
-    return api.adminUsername() || "Security Analyst";
-  }, [mounted]);
+    return api.adminFullName?.() || api.adminUsername() || "Security Analyst";
+  }, [mounted, profile]);
+
+  const adminEmail = useMemo(() => {
+    if (profile?.email) return profile.email;
+    if (!mounted) return null;
+    return api.adminEmail?.() || null;
+  }, [mounted, profile]);
+
+  const adminAvatar = useMemo(() => {
+    if (profile?.avatarUrl) return profile.avatarUrl;
+    if (!mounted) return null;
+    return api.adminAvatar?.() || null;
+  }, [mounted, profile]);
 
   const adminRole = useMemo(() => {
+    if (profile?.role) {
+      return profile.role === "super_admin" || profile.role === "admin"
+        ? "Administrator"
+        : "Security Analyst";
+    }
     if (!mounted) return "Admin";
     return api.adminRole() || "Admin";
-  }, [mounted]);
+  }, [mounted, profile]);
 
   const initials = useMemo(() => {
-    if (!adminName) return "SA";
-    const parts = adminName.split(/[@._ -]/).filter(Boolean);
+    const raw = adminName || adminEmail || "SA";
+    const clean = raw.split("@")[0];
+    const parts = clean.split(/[@._ -]/).filter(Boolean);
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return adminName.slice(0, 2).toUpperCase();
-  }, [adminName]);
+    return clean.slice(0, 2).toUpperCase();
+  }, [adminName, adminEmail]);
 
   useEffect(() => {
     let active = true;
@@ -247,15 +289,28 @@ export default function Sidebar() {
         {/* User Profile */}
         <div
           className={clsx(
-            "flex items-center gap-2 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-colors",
+            "flex items-center gap-2.5 px-2 py-2 rounded-xl border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-all",
             collapsed && "justify-center px-0"
           )}
+          title={adminEmail ? `${adminName} (${adminEmail})` : adminName}
         >
-          <div
-            className="w-7 h-7 rounded-md bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-[11px] shrink-0"
-            suppressHydrationWarning
-          >
-            {initials}
+          <div className="relative shrink-0">
+            {adminAvatar && !avatarError ? (
+              <img
+                src={adminAvatar}
+                alt={adminName}
+                className="w-8 h-8 rounded-lg object-cover border border-slate-200 shadow-2xs"
+                onError={() => setAvatarError(true)}
+              />
+            ) : (
+              <div
+                className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs"
+                suppressHydrationWarning
+              >
+                {initials}
+              </div>
+            )}
+            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
           </div>
 
           {!collapsed && (
@@ -263,8 +318,12 @@ export default function Sidebar() {
               <div className="text-xs font-semibold text-slate-900 truncate" suppressHydrationWarning>
                 {adminName}
               </div>
-              <div className="text-[10px] text-slate-500 font-mono truncate" suppressHydrationWarning>
-                {adminRole}
+              <div
+                className="text-[10px] text-slate-500 font-mono truncate"
+                suppressHydrationWarning
+                title={adminEmail || adminRole}
+              >
+                {adminEmail || adminRole}
               </div>
             </div>
           )}
@@ -273,7 +332,7 @@ export default function Sidebar() {
             <button
               type="button"
               onClick={handleLogout}
-              className="text-slate-400 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
+              className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
               title="Sign Out"
             >
               <LogOut size={13} />

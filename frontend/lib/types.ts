@@ -33,6 +33,9 @@ export interface ScanResult {
   flag_reasons: { module: string; reason: string; level: string; score: number }[];
   class_probabilities?: { Safe?: number; Suspicious?: number; Fraudulent?: number } & Record<string, number>;
   screenshots?: string[];
+  metadata?: Record<string, any>;
+  certificate?: Record<string, any>;
+  [key: string]: any;
 }
 
 export interface ModelBenchmarkEntry {

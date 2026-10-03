@@ -30,7 +30,39 @@ function getAdminPayload() {
 
 function getAdminUsername() {
   const payload = getAdminPayload();
-  return typeof payload?.sub === "string" ? payload.sub : null;
+  if (typeof payload?.username === "string" && payload.username) return payload.username;
+  if (typeof payload?.sub === "string" && payload.sub) return payload.sub.split("@")[0];
+  return "admin";
+}
+
+function getAdminEmail() {
+  const payload = getAdminPayload();
+  if (payload) {
+    if (typeof payload.email === "string" && payload.email) return payload.email;
+    if (typeof payload.sub === "string" && payload.sub.includes("@")) return payload.sub;
+    if (typeof payload.sub === "string" && payload.sub) return `${payload.sub}@appshield.ai`;
+  }
+  return "admin@appshield.ai";
+}
+
+function getAdminFullName() {
+  const payload = getAdminPayload();
+  if (payload?.full_name) return payload.full_name;
+  if (payload?.username) return payload.username;
+  const email = getAdminEmail();
+  if (email && email !== "admin@appshield.ai") {
+    const userPart = email.split("@")[0];
+    return userPart.charAt(0).toUpperCase() + userPart.slice(1);
+  }
+  return "Security Analyst";
+}
+
+function getAdminAvatar() {
+  const payload = getAdminPayload();
+  if (payload?.avatar_url) return payload.avatar_url;
+  const email = getAdminEmail();
+  const name = getAdminFullName();
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || email.split("@")[0])}&background=2563eb&color=fff&rounded=true&bold=true`;
 }
 
 function getAdminRole() {
@@ -183,7 +215,17 @@ export const api = {
     return Boolean(token);
   },
   adminUsername: () => getAdminUsername(),
+  adminEmail: () => getAdminEmail(),
+  adminAvatar: () => getAdminAvatar(),
+  adminFullName: () => getAdminFullName(),
   adminRole: () => getAdminRole(),
+  getCurrentUser: () => request("/api/auth/me"),
+  updateProfile: (data: { full_name?: string; email?: string; avatar_url?: string }) =>
+    request("/api/auth/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
 
   scanPlayUrl: (url: string, modelName?: string) => {
     const form = new FormData();

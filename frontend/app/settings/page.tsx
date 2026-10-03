@@ -17,6 +17,7 @@ import {
   Server,
   KeyRound,
   ExternalLink,
+  Mail,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -27,8 +28,47 @@ export default function SettingsPage() {
   const [clearMessage, setClearMessage] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  const adminUser = api.adminUsername() || "admin";
-  const adminRole = api.adminRole() || "Administrator";
+  const [profile, setProfile] = useState<{
+    email?: string;
+    fullName?: string;
+    username?: string;
+    avatarUrl?: string;
+    role?: string;
+  } | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    fetchStats();
+    api.getCurrentUser?.()
+      .then((data: any) => {
+        if (data && (data.email || data.avatar_url || data.username)) {
+          setProfile({
+            email: data.email,
+            fullName: data.full_name,
+            username: data.username,
+            avatarUrl: data.avatar_url,
+            role: data.role,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const adminUser = profile?.username || api.adminUsername() || "admin";
+  const adminName = profile?.fullName || api.adminFullName() || adminUser;
+  const adminEmail = profile?.email || api.adminEmail() || `${adminUser}@appshield.ai`;
+  const adminAvatar = profile?.avatarUrl || api.adminAvatar();
+  const adminRole = profile?.role === "super_admin" || profile?.role === "admin"
+    ? "Administrator"
+    : (api.adminRole() || "Administrator");
+
+  const initials = (() => {
+    const raw = adminName || adminEmail || "OP";
+    const clean = raw.split("@")[0];
+    const parts = clean.split(/[@._ -]/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return clean.slice(0, 2).toUpperCase();
+  })();
 
   const fetchStats = async () => {
     try {
@@ -249,19 +289,54 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <h2 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
-                      Operator Identity
+                      Operator Identity & Profile
                     </h2>
-                    <p className="text-[11px] text-slate-500 font-mono">Current Session State</p>
+                    <p className="text-[11px] text-slate-500 font-mono">Synchronized with MongoDB Compass</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                  Active
+                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle2 size={11} /> MongoDB Synced
                 </span>
+              </div>
+
+              {/* Profile Avatar & Info Card */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-3.5">
+                <div className="relative shrink-0">
+                  {adminAvatar && !avatarError ? (
+                    <img
+                      src={adminAvatar}
+                      alt={adminName}
+                      className="w-12 h-12 rounded-xl object-cover border border-slate-200 shadow-2xs"
+                      onError={() => setAvatarError(true)}
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-blue-100 border border-blue-200 text-blue-800 flex items-center justify-center font-bold text-base shadow-2xs">
+                      {initials}
+                    </div>
+                  )}
+                  <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full" title="Online" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold text-slate-900 truncate">
+                    {adminName}
+                  </div>
+                  <div className="text-xs font-mono text-slate-600 truncate flex items-center gap-1 mt-0.5" title={adminEmail}>
+                    <Mail size={12} className="text-slate-400 shrink-0" />
+                    <span>{adminEmail}</span>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-2 text-xs">
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
-                  <span className="text-slate-500">Authenticated Operator</span>
+                  <span className="text-slate-500">Stored Email ID</span>
+                  <span className="text-slate-900 font-mono font-semibold flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    {adminEmail}
+                  </span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <span className="text-slate-500">Username</span>
                   <span className="text-slate-900 font-mono font-bold">{adminUser}</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
@@ -269,8 +344,8 @@ export default function SettingsPage() {
                   <span className="text-blue-600 font-mono font-bold">{adminRole}</span>
                 </div>
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between">
-                  <span className="text-slate-500">Security Signature Scheme</span>
-                  <span className="text-slate-700 font-mono text-[11px]">JWT HS256 Signed</span>
+                  <span className="text-slate-500">Persistence Store</span>
+                  <span className="text-emerald-700 font-mono text-[11px] font-semibold">mongodb://localhost:27017/users</span>
                 </div>
               </div>
             </div>

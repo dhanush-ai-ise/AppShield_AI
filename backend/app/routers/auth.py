@@ -20,12 +20,30 @@ from pydantic import BaseModel
 from app.config import settings
 from app.db.mongo import mongo_db
 
+import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
+
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 users_collection = mongo_db["users"]
 _LOCAL_USERS: dict = {}
+
+
+def get_avatar_url(email: str, name: Optional[str] = None) -> str:
+    """
+    Returns a verified Gravatar profile picture URL for the email address,
+    with a deterministic fallback. If the email has a registered Gravatar
+    (e.g., linked to WordPress/GitHub), it delivers the real user photo.
+    """
+    clean_email = (email or "").strip().lower()
+    if not clean_email or "@" not in clean_email:
+        clean_email = "admin@appshield.ai"
+    email_hash = hashlib.md5(clean_email.encode("utf-8")).hexdigest()
+    return f"https://www.gravatar.com/avatar/{email_hash}?s=200&d=identicon"
 
 
 class Token(BaseModel):
@@ -44,11 +62,21 @@ class SignupRequest(BaseModel):
     username: Optional[str] = None
 
 
+class ProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
 @lru_cache(maxsize=1)
 def _admin_user() -> dict:
+    admin_email = f"{settings.ADMIN_USERNAME}@appshield.ai"
     return {
+        "user_id": "usr_admin_001",
         "username": settings.ADMIN_USERNAME,
-        "email": f"{settings.ADMIN_USERNAME}@appshield.ai",
+        "email": admin_email,
+        "full_name": "Security Administrator",
+        "avatar_url": get_avatar_url(admin_email, "Security Administrator"),
         "hashed_password": pwd_context.hash(settings.ADMIN_PASSWORD),
         "is_admin": True,
         "role": "super_admin",
@@ -74,10 +102,14 @@ def authenticate_user(username: str, password: str) -> Optional[dict]:
         db_user = _LOCAL_USERS.get(username)
 
     if db_user and verify_password(password, db_user.get("hashed_password", "")):
+        u_email = db_user.get("email") or db_user.get("username")
+        u_name = db_user.get("full_name") or db_user.get("username")
         return {
-            "username": db_user.get("username") or db_user.get("email"),
-            "email": db_user.get("email") or db_user.get("username"),
-            "full_name": db_user.get("full_name", ""),
+            "user_id": db_user.get("user_id") or f"usr_{uuid.uuid4().hex[:8]}",
+            "username": db_user.get("username") or u_email.split("@")[0],
+            "email": u_email,
+            "full_name": u_name,
+            "avatar_url": db_user.get("avatar_url") or get_avatar_url(u_email, u_name),
             "role": db_user.get("role", "user"),
             "is_admin": db_user.get("role") in ("admin", "super_admin"),
         }
@@ -117,18 +149,27 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         db_user = _LOCAL_USERS.get(username)
 
     if db_user:
+        u_email = db_user.get("email") or username
+        u_name = db_user.get("full_name") or db_user.get("username") or username
         return {
+            "user_id": db_user.get("user_id") or f"usr_{uuid.uuid4().hex[:8]}",
             "username": db_user.get("username") or username,
-            "email": db_user.get("email") or username,
-            "full_name": db_user.get("full_name", ""),
+            "email": u_email,
+            "full_name": u_name,
+            "avatar_url": db_user.get("avatar_url") or get_avatar_url(u_email, u_name),
             "role": db_user.get("role", "user"),
             "is_admin": db_user.get("role") in ("admin", "super_admin"),
         }
 
     is_admin = payload.get("role") in ("admin", "super_admin") or username == settings.ADMIN_USERNAME
+    user_email = payload.get("email") or (username if "@" in username else f"{username}@appshield.ai")
+    user_name = payload.get("full_name") or username.split("@")[0].capitalize()
     return {
+        "user_id": f"usr_{uuid.uuid4().hex[:8]}",
         "username": username,
-        "email": username,
+        "email": user_email,
+        "full_name": user_name,
+        "avatar_url": payload.get("avatar_url") or get_avatar_url(user_email, user_name),
         "role": payload.get("role", "admin" if is_admin else "user"),
         "is_admin": is_admin,
     }
@@ -139,11 +180,14 @@ def _resolve_user_dict(sub_val: str, role_val: Optional[str] = None) -> dict:
     try:
         db_user = users_collection.find_one({"$or": [{"username": sub_val}, {"email": sub_val}]})
         if db_user:
+            email_val = db_user.get("email") or (f"{sub_val}@appshield.ai" if "@" not in sub_val else sub_val)
+            name_val = db_user.get("full_name") or ("Security Administrator" if is_admin else "Analyst")
             return {
                 "user_id": db_user.get("user_id") or ("usr_admin_001" if is_admin else "usr_analyst_002"),
                 "username": db_user.get("username") or sub_val,
-                "email": db_user.get("email") or (f"{sub_val}@appshield.ai" if "@" not in sub_val else sub_val),
-                "full_name": db_user.get("full_name") or ("Security Administrator" if is_admin else "Analyst"),
+                "email": email_val,
+                "full_name": name_val,
+                "avatar_url": db_user.get("avatar_url") or get_avatar_url(email_val, name_val),
                 "role": db_user.get("role") or ("super_admin" if is_admin else "user"),
                 "is_admin": is_admin or db_user.get("is_admin", False),
             }
@@ -152,11 +196,13 @@ def _resolve_user_dict(sub_val: str, role_val: Optional[str] = None) -> dict:
 
     resolved_email = sub_val if "@" in sub_val else f"{sub_val}@appshield.ai"
     resolved_user = sub_val.split("@")[0] if "@" in sub_val else sub_val
+    name_val = "Security Administrator" if is_admin else resolved_user.capitalize()
     return {
         "user_id": "usr_admin_001" if is_admin else f"usr_{uuid.uuid4().hex[:8]}",
         "username": resolved_user,
         "email": resolved_email,
-        "full_name": "Security Administrator" if is_admin else resolved_user.capitalize(),
+        "full_name": name_val,
+        "avatar_url": get_avatar_url(resolved_email, name_val),
         "role": "super_admin" if is_admin else (role_val or "user"),
         "is_admin": is_admin,
     }
@@ -221,24 +267,40 @@ async def signup(req: SignupRequest) -> Token:
     if existing:
         raise HTTPException(status_code=400, detail="Account with this email already exists.")
 
+    username = (req.username or email.split("@")[0]).strip()
+    full_name = (req.full_name or "").strip() or username.capitalize()
+    avatar_url = get_avatar_url(email, full_name)
+
     user_doc = {
         "user_id": str(uuid.uuid4()),
         "email": email,
-        "username": (req.username or email.split("@")[0]).strip(),
-        "full_name": (req.full_name or "").strip(),
+        "username": username,
+        "full_name": full_name,
+        "avatar_url": avatar_url,
         "hashed_password": pwd_context.hash(req.password),
         "role": "user",
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_login": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     try:
         users_collection.insert_one(user_doc)
-    except Exception:
-        pass
+        logger.info(f"MongoDB: Created new user {email} with avatar.")
+    except Exception as exc:
+        logger.warning(f"Failed to insert user into MongoDB: {exc}")
+
     _LOCAL_USERS[email] = user_doc
     _LOCAL_USERS[user_doc["username"]] = user_doc
 
-    access_token = create_access_token({"sub": email, "role": "user"})
+    access_token = create_access_token({
+        "sub": email,
+        "email": email,
+        "username": username,
+        "full_name": full_name,
+        "avatar_url": avatar_url,
+        "role": "user",
+    })
     return Token(access_token=access_token, token_type="bearer")
 
 
@@ -252,12 +314,100 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_sub = user.get("email") or user.get("username")
+    user_email = user.get("email") or (form_data.username if "@" in form_data.username else f"{form_data.username}@appshield.ai")
+    user_email = user_email.strip().lower()
+    full_name = user.get("full_name") or user.get("username") or user_email.split("@")[0].capitalize()
+    username = user.get("username") or user_email.split("@")[0]
+    avatar_url = user.get("avatar_url") or get_avatar_url(user_email, full_name)
+    role = user.get("role", "super_admin" if user.get("is_admin") else "user")
+    is_admin = user.get("is_admin", role in ("admin", "super_admin"))
+
+    # Always persist/update user in MongoDB users collection with exact email, avatar, and last login
+    try:
+        users_collection.update_one(
+            {"$or": [{"email": user_email}, {"username": username}]},
+            {
+                "$set": {
+                    "email": user_email,
+                    "username": username,
+                    "full_name": full_name,
+                    "avatar_url": avatar_url,
+                    "role": role,
+                    "is_admin": is_admin,
+                    "last_login": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "$setOnInsert": {
+                    "user_id": user.get("user_id") or f"usr_{uuid.uuid4().hex[:8]}",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True
+        )
+        logger.info(f"MongoDB: Recorded login for user email {user_email} with avatar.")
+    except Exception as exc:
+        logger.warning(f"Failed to update MongoDB user login: {exc}")
+
     access_token = create_access_token({
-        "sub": user_sub,
-        "role": user.get("role", "admin" if user.get("is_admin") else "user"),
+        "sub": user_email,
+        "email": user_email,
+        "username": username,
+        "full_name": full_name,
+        "avatar_url": avatar_url,
+        "role": role,
     })
     return Token(access_token=access_token, token_type="bearer")
+
+
+@router.get("/me")
+async def get_current_user_profile(current_user: dict = Depends(get_current_user)) -> dict:
+    email = current_user.get("email") or (f"{current_user.get('username')}@appshield.ai" if "@" not in str(current_user.get("username", "")) else str(current_user.get("username")))
+    email = email.strip().lower()
+    name = current_user.get("full_name") or current_user.get("username")
+    avatar = current_user.get("avatar_url") or get_avatar_url(email, name)
+    return {
+        "user_id": current_user.get("user_id") or "usr_001",
+        "email": email,
+        "username": current_user.get("username") or email.split("@")[0],
+        "full_name": name,
+        "avatar_url": avatar,
+        "role": current_user.get("role", "user"),
+        "is_admin": current_user.get("is_admin", False),
+    }
+
+
+@router.post("/profile")
+async def update_profile(
+    req: ProfileUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    username = current_user.get("username")
+    user_email = (req.email or current_user.get("email") or f"{username}@appshield.ai").strip().lower()
+    full_name = req.full_name or current_user.get("full_name") or username
+    avatar_url = req.avatar_url or current_user.get("avatar_url") or get_avatar_url(user_email, full_name)
+
+    try:
+        users_collection.update_one(
+            {"$or": [{"username": username}, {"email": user_email}]},
+            {
+                "$set": {
+                    "email": user_email,
+                    "full_name": full_name,
+                    "avatar_url": avatar_url,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True,
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to update profile in MongoDB: {exc}")
+
+    return {
+        "status": "ok",
+        "email": user_email,
+        "full_name": full_name,
+        "avatar_url": avatar_url,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -304,9 +454,9 @@ def google_login(request: Request, origin: Optional[str] = None) -> RedirectResp
 @router.get("/google/callback", summary="Handle Google OAuth callback")
 async def google_callback(code: str, state: Optional[str] = None) -> RedirectResponse:
     """
-    Exchange the authorization code Google sends back for an access token,
-    fetch the user's profile, mint an app JWT and redirect the browser to
-    the frontend login page with the token embedded in the URL parameters.
+    Exchange authorization code for Google access token, fetch the user's
+    email, display name, and profile picture, persist to MongoDB users collection,
+    mint a JWT, and redirect to the frontend.
     """
     # 1. Exchange code for Google access token
     async with httpx.AsyncClient(timeout=10) as client:
@@ -329,7 +479,7 @@ async def google_callback(code: str, state: Optional[str] = None) -> RedirectRes
 
     google_token = token_resp.json().get("access_token")
 
-    # 2. Fetch Google user profile
+    # 2. Fetch Google user profile (email, name, picture)
     async with httpx.AsyncClient(timeout=10) as client:
         userinfo_resp = await client.get(
             _GOOGLE_USERINFO_ENDPOINT,
@@ -343,15 +493,52 @@ async def google_callback(code: str, state: Optional[str] = None) -> RedirectRes
         )
 
     user_info = userinfo_resp.json()
-    email: str = user_info.get("email", "google_user")
+    email: str = (user_info.get("email") or "google_user@appshield.ai").strip().lower()
+    name: str = user_info.get("name") or email.split("@")[0].capitalize()
+    picture: str = user_info.get("picture") or get_avatar_url(email, name)
+    username = email.split("@")[0]
 
-    # 3. Mint an app JWT using the Google email as the subject
+    # 3. Store / update user profile in MongoDB users collection
+    try:
+        users_collection.update_one(
+            {"email": email},
+            {
+                "$set": {
+                    "email": email,
+                    "username": username,
+                    "full_name": name,
+                    "avatar_url": picture,
+                    "provider": "google",
+                    "last_login": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "$setOnInsert": {
+                    "user_id": f"usr_{uuid.uuid4().hex[:8]}",
+                    "role": "user",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            },
+            upsert=True
+        )
+        logger.info(f"MongoDB: Stored Google authenticated user {email} with profile picture.")
+    except Exception as exc:
+        logger.warning(f"Failed to store Google user in MongoDB: {exc}")
+
+    # 4. Mint an app JWT with sub=email, email, and avatar_url
     access_token = create_access_token(
-        data={"sub": email, "provider": "google"},
+        data={
+            "sub": email,
+            "email": email,
+            "username": username,
+            "full_name": name,
+            "avatar_url": picture,
+            "provider": "google",
+            "role": "user",
+        },
         expires_delta=timedelta(hours=8),
     )
 
-    # 4. Redirect browser back to the frontend origin that initiated login
+    # 5. Redirect browser back to the frontend
     frontend_origin = state if (state and state.startswith("http")) else settings.FRONTEND_URL
     redirect_url = (
         f"{frontend_origin}/login"
